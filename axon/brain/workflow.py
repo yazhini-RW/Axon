@@ -37,6 +37,7 @@ CHECKPOINT_TYPES = [
 ]
 
 PersistFn = Callable[[ClassifiedNote], None]
+RememberFn = Callable[[ClassifiedNote], None]
 
 
 class ClassifyExecutor(Executor):
@@ -56,6 +57,21 @@ class ClassifyExecutor(Executor):
         )
 
 
+class RememberExecutor(Executor):
+    """Step two: file it away so it can be found later by meaning."""
+
+    def __init__(self, remember: RememberFn, id: str = "remember") -> None:
+        super().__init__(id=id)
+        self._remember = remember
+
+    @handler
+    async def remember(
+        self, note: ClassifiedNote, ctx: WorkflowContext[ClassifiedNote]
+    ) -> None:
+        self._remember(note)
+        await ctx.send_message(note)
+
+
 class PersistExecutor(Executor):
     """Step two: record the verdict."""
 
@@ -73,13 +89,20 @@ class PersistExecutor(Executor):
 
 def build_workflow(
     persist: PersistFn,
+    remember: RememberFn | None = None,
     brain: Brain | None = None,
     settings: Settings | None = None,
 ) -> Workflow:
+    """classify -> remember -> persist.
+
+    `remember` is optional so tests can exercise the graph without loading a 134MB
+    embedding model. The graph shape stays identical either way.
+    """
     settings = settings or get_settings()
     settings.ensure_dirs()
 
     classify = ClassifyExecutor(brain or get_brain(settings))
+    recall = RememberExecutor(remember or (lambda _note: None))
     store = PersistExecutor(persist)
 
     return (
@@ -90,7 +113,8 @@ def build_workflow(
                 settings.checkpoint_dir, allowed_checkpoint_types=CHECKPOINT_TYPES
             ),
         )
-        .add_edge(classify, store)
+        .add_edge(classify, recall)
+        .add_edge(recall, store)
         .build()
     )
 
@@ -99,11 +123,12 @@ async def run_capture(
     note_id: int,
     text: str,
     persist: PersistFn,
+    remember: RememberFn | None = None,
     brain: Brain | None = None,
     settings: Settings | None = None,
 ) -> ClassifiedNote:
     """Push one note through the brain and return what it decided."""
-    workflow = build_workflow(persist, brain=brain, settings=settings)
+    workflow = build_workflow(persist, remember=remember, brain=brain, settings=settings)
     result = await workflow.run(ClassifyRequest(note_id=note_id, text=text))
 
     outputs = result.get_outputs()

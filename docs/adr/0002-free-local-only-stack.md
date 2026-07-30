@@ -29,9 +29,13 @@ Gemini's base URL. This is Step 6 and is entirely optional.
 | Vector store | `qdrant-client` local on-disk mode | no server to run, no key |
 | Embeddings | `fastembed`, `BAAI/bge-small-en-v1.5` | local ONNX, no key |
 
-**Model choice:** Mem0's fastembed default is `thenlper/gte-large` (~670MB, 1024 dims).
-Axon defaults to `BAAI/bge-small-en-v1.5` (~130MB, 384 dims) — far lighter for
-comparable quality on short notes. Overridable by config for anyone wanting better recall.
+**Model choice:** Mem0's fastembed default is `thenlper/gte-large` (**1.2GB**, 1024 dims).
+Axon defaults to `BAAI/bge-small-en-v1.5` (134MB on disk, 384 dims) — nearly ten times
+lighter, for comparable quality on short notes. Overridable via `AXON_EMBED_MODEL`.
+
+Dimensions are looked up at runtime with `TextEmbedding.list_supported_models()`, which
+reads metadata only and downloads nothing, so overriding the model cannot silently
+mismatch the vector store.
 
 ### The placeholder-key workaround
 
@@ -60,7 +64,17 @@ means local.
   contained to one function in `axon/memory/`.
 - Mem0 2.x API asymmetry to remember: `add()` takes `user_id=` at top level, but
   `search()` requires `filters={"user_id": ...}` and rejects the top-level form.
-- The local Qdrant client should be **closed explicitly**; its `__del__` throws noise at
-  interpreter shutdown otherwise.
+- **Local Qdrant is exclusive to one process.** A second client on the same folder raises
+  `"Storage folder ... is already accessed by another instance"`. Two consequences, both
+  binding:
+  1. Memory is opened for the duration of one command and closed again, never held open.
+     `MemoryStore` is a context manager so the lock is always released.
+  2. **The `axon run` scheduler daemon must never touch memory**, or every `axon add`
+     and `axon recall` would fail while it is running. The daemon uses SQLite only.
+- **Importing mem0 costs ~3 seconds** (it pulls in onnxruntime), and loading the model
+  another ~2.4s. Those imports are therefore deferred into the functions that need them,
+  so `axon list` and `axon doctor` stay instant. Do not hoist them to module level.
+- Mem0 logs a spaCy warning on every call for a lemmatiser Axon never uses. Exactly that
+  one logger is silenced; nothing broader, so real errors still surface.
 - If Mem0 becomes more trouble than it is worth, the fallback is Qdrant + fastembed
   directly behind the same `axon/memory/store.py` interface — no other module changes.

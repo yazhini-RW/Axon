@@ -15,8 +15,6 @@ import warnings
 from datetime import datetime
 from typing import Protocol
 
-import dateparser
-
 from axon.models import Classification, NoteKind
 
 _WEEKDAYS = r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tues?|weds?|thur?s?|fri|sat|sun"
@@ -107,6 +105,10 @@ def extract_due(text: str) -> tuple[datetime | None, str | None]:
     if not spans:
         return None, None
 
+    # ~0.4s to import, and only reached once a real time expression has been found,
+    # so commands that never classify anything stay fast.
+    import dateparser
+
     raw = " ".join(spans)
     candidates = [_normalise(raw)]
     if len(spans) > 1:  # fall back to individual fragments if the join confuses it
@@ -188,4 +190,5 @@ class MockBrain:
 
 def get_brain(settings=None) -> Brain:
     """Pick a brain. Gemini arrives in Step 6; for now there is only the mock."""
+    del settings  # accepted already so callers don't have to change when Gemini lands
     return MockBrain()

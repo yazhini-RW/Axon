@@ -9,11 +9,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from axon.brain.classifier import get_brain
-from axon.brain.workflow import run_capture
 from axon.config import get_settings
 from axon.db import repo
-from axon.models import ClassifiedNote, Note, NoteKind, NoteStatus
+from axon.models import ClassifiedNote, Note, NoteKind
 
 def _use_utf8() -> None:
     """The Windows console defaults to cp1252, which turns an em-dash into a black
@@ -69,8 +67,23 @@ def add(text: str = typer.Argument(..., help="The note, in your own words.")) ->
                 result.classification.due_at,
             )
 
+        # Imported here, not at module level: `axon list` and `axon doctor` never
+        # classify or remember anything and shouldn't wait for these.
+        from axon.brain.workflow import run_capture
+        from axon.memory.store import MemoryLocked, MemoryStore
+
         try:
-            classified = asyncio.run(run_capture(note.id, note.text, persist))
+            with console.status("[dim]thinking...[/dim]"), MemoryStore() as memory:
+
+                def remember(result: ClassifiedNote) -> None:
+                    memory.remember(
+                        result.text, note_id=result.note_id, kind=result.classification.kind.value
+                    )
+
+                classified = asyncio.run(run_capture(note.id, note.text, persist, remember))
+        except MemoryLocked as exc:
+            console.print(f"[yellow]{exc}[/yellow]")
+            raise typer.Exit(code=1) from exc
         except Exception as exc:  # the note is already saved; never lose it over this
             console.print(f"[yellow]couldn't classify it just now:[/yellow] {exc}")
             console.print("[dim]it's saved as unclassified — try `axon list`[/dim]")
@@ -120,6 +133,64 @@ def list_cmd(
     console.print(table)
 
 
+# Similarity scores from this model bunch up in a narrow band (roughly 0.4-0.7), so an
+# absolute cutoff either hides correct answers or shows everything. These compare
+# results against each other instead, which is what actually carries information.
+_NOTHING_RELATED = 0.30   # below this, the best hit is not about the query at all
+_RELATIVE_BAND = 0.15     # how far behind the winner a result can be and still be shown
+_TOO_CLOSE_TO_CALL = 0.05  # if 1st and 2nd are this close, Axon is guessing
+
+
+@app.command()
+def recall(
+    query: str = typer.Argument(..., help="What you're trying to remember."),
+    limit: int = typer.Option(5, "--limit", "-n", help="How many to consider."),
+) -> None:
+    """Search your memory by meaning, not by exact words."""
+    from axon.memory.store import MemoryLocked, MemoryStore
+
+    try:
+        with console.status("[dim]remembering...[/dim]"), MemoryStore() as memory:
+            hits = memory.recall(query, limit=limit)
+    except MemoryLocked as exc:
+        console.print(f"[yellow]{exc}[/yellow]")
+        raise typer.Exit(code=1) from exc
+
+    if not hits:
+        console.print("[dim]nothing in memory yet[/dim]")
+        return
+
+    best = hits[0].score
+    if best < _NOTHING_RELATED:
+        console.print("[dim]nothing in memory looks related to that[/dim]")
+        return
+
+    shown = [h for h in hits if h.score >= best - _RELATIVE_BAND]
+    runner_up = hits[1].score if len(hits) > 1 else 0.0
+    unsure = len(shown) > 1 and (best - runner_up) < _TOO_CLOSE_TO_CALL
+
+    table = Table(box=None, pad_edge=False)
+    table.add_column("", style="dim")
+    table.add_column("note")
+    table.add_column("kind")
+
+    for index, hit in enumerate(shown):
+        marker = "[green]closest[/green]" if index == 0 and not unsure else "[dim]also[/dim]"
+        note_id = f"[dim]#{hit.note_id}[/dim] " if hit.note_id else ""
+        table.add_row(
+            f"{marker} [dim]{hit.score:.2f}[/dim]",
+            f"{note_id}{hit.text}",
+            f"[dim]{hit.kind or '-'}[/dim]",
+        )
+    console.print(table)
+
+    if unsure:
+        console.print(
+            "\n[yellow]these all look about equally similar[/yellow]"
+            " [dim]- Axon isn't confident which you meant[/dim]"
+        )
+
+
 @app.command()
 def doctor() -> None:
     """Show how Axon is configured and whether anything costs money."""
@@ -140,6 +211,11 @@ def doctor() -> None:
     table.add_row("data dir", str(settings.data_dir))
     table.add_row("database", f"{settings.db_path} [dim](schema v{version})[/dim]")
     table.add_row("notes stored", str(total))
+    # Deliberately not opened here: that would cost ~5s and take the storage lock.
+    memory_state = (
+        "ready" if settings.vector_dir.exists() else "[dim]not built yet (first `axon add`)[/dim]"
+    )
+    table.add_row("memory", f"{memory_state} [dim]{settings.vector_dir}[/dim]")
     console.print(table)
     console.print("\n[dim]nothing here requires a paid service.[/dim]")
 

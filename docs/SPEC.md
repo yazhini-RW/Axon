@@ -82,11 +82,14 @@ V1 is done when all of these are true:
 
 ## Known limits (measured, not guessed)
 
-- **Embedding recall is imperfect.** In verification, the query *"how do I get online"*
-  matched *"deploy the staging server every Friday"* (0.615) instead of the wifi-password
-  note. This is why acceptance criterion 4 requires ranked top-k with visible scores
-  rather than one confident answer. A larger model (`thenlper/gte-large`, ~670MB) scores
-  better and is opt-in via config; the default is `BAAI/bge-small-en-v1.5` (~130MB).
+- **Embedding recall is imperfect, and scores bunch up.** Real measured scores sit in a
+  narrow 0.4-0.7 band, so an *absolute* cutoff is useless: at a 0.45 threshold the
+  correct answer to *"which agent library did I pick"* (0.42) was hidden, while the
+  wrong answer to *"how do I get online"* (0.59) was shown confidently. `axon recall`
+  therefore ranks results **against each other** — it shows everything within 0.15 of
+  the best, and when first and second place are within 0.05 it says outright that it
+  is not confident. A larger model (`thenlper/gte-large`, 1.2GB) scores better and is
+  opt-in via `AXON_EMBED_MODEL`; the default is `BAAI/bge-small-en-v1.5` (134MB).
 - **Mem0 builds an LLM at construction time** even when it is never used. In mock mode
   Axon passes a placeholder key and only ever calls `add(infer=False)`, so no LLM is
   invoked. See [ADR-0002](adr/0002-free-local-only-stack.md).

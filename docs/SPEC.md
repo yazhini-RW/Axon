@@ -93,7 +93,21 @@ V1 is done when all of these are true:
 - **Natural-language time parsing is approximate.** In mock mode a rule-based parser
   plus `dateparser` handles common phrasings ("at 5pm", "in 5 days", "tomorrow morning").
   Unusual phrasings may fail; Axon says so rather than guessing silently.
+- **`dateparser` must never be given raw text.** It parses the bare words "we", "to" and
+  "on" as valid dates, which would turn every fact into a reminder. A strict regex finds
+  genuine time expressions first and only those fragments are parsed. There is a test
+  pinning this (`test_bare_prepositions_are_never_read_as_dates`) — do not relax it.
+- **A resolved time can land in the past.** "call mum this morning" typed at 6pm resolves
+  to 09:00 *today*. Step 4 must decide what to do with an already-due reminder (fire
+  immediately, or warn) rather than scheduling a job that can never run.
+- **Recurring notes fire once in V1.** "every Friday" is detected and flagged, and only
+  the next occurrence is scheduled. Real recurrence is a later step, and Axon says so
+  at capture time rather than silently promising weekly behaviour.
 - **Windows notifications are Windows-only.** Elsewhere Axon prints to console.
+- **Checkpoints are never cleaned up yet.** Every `axon add` writes one JSON file per
+  workflow superstep to `data/checkpoints/`, and nothing deletes them. Step 5 owns the
+  fix, because the retention rule depends on approvals: a checkpoint can only be deleted
+  once its run finished with no pending requests. Until then, disk use grows slowly.
 
 ## Deliberate exception for the `production-validator` agent
 

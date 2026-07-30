@@ -102,6 +102,20 @@ def add_note(conn: sqlite3.Connection, text: str) -> Note:
     return Note(id=cur.lastrowid, text=text, created_at=created)
 
 
+def apply_classification(
+    conn: sqlite3.Connection,
+    note_id: int,
+    kind: NoteKind,
+    due_at: datetime | None = None,
+    status: NoteStatus = NoteStatus.CLASSIFIED,
+) -> None:
+    """Record what the brain worked out about a note."""
+    conn.execute(
+        "UPDATE notes SET kind = ?, due_at = ?, status = ? WHERE id = ?",
+        (kind.value, _to_db(due_at), status.value, note_id),
+    )
+
+
 def get_note(conn: sqlite3.Connection, note_id: int) -> Note | None:
     row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
     return _row_to_note(row) if row else None

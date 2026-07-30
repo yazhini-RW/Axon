@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 
+from pydantic import BaseModel
+
 
 class NoteKind(str, Enum):
     """What a note turns out to be. Everything starts UNCLASSIFIED."""
@@ -49,3 +51,34 @@ class Note:
     def due_at_local(self) -> datetime | None:
         """due_at is stored in UTC; show it in the machine's own timezone."""
         return self.due_at.astimezone() if self.due_at else None
+
+
+# --- messages that travel through the workflow -------------------------------------
+# These are pydantic rather than dataclasses because the framework serialises them into
+# checkpoints. Keeping them here (never in __main__) is what makes a paused workflow
+# resumable at all — see docs/adr/0003-human-approval-checkpoint.md.
+
+
+class Classification(BaseModel):
+    """What the brain decided about a note."""
+
+    kind: NoteKind
+    due_at: datetime | None = None
+    recurring: bool = False
+    risky: bool = False
+    reason: str = ""
+
+
+class ClassifyRequest(BaseModel):
+    """Goes into the workflow."""
+
+    note_id: int
+    text: str
+
+
+class ClassifiedNote(BaseModel):
+    """Comes out of it."""
+
+    note_id: int
+    text: str
+    classification: Classification

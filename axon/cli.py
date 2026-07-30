@@ -2,13 +2,32 @@
 
 from __future__ import annotations
 
+import asyncio
+import sys
+
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from axon.brain.classifier import get_brain
+from axon.brain.workflow import run_capture
 from axon.config import get_settings
 from axon.db import repo
-from axon.models import Note, NoteKind, NoteStatus
+from axon.models import ClassifiedNote, Note, NoteKind, NoteStatus
+
+def _use_utf8() -> None:
+    """The Windows console defaults to cp1252, which turns an em-dash into a black
+    diamond. Notes are free text, so this protects whatever the user actually typed."""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = getattr(stream, "encoding", "") or ""
+        if encoding.lower().replace("-", "") != "utf8":
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, OSError):
+                pass  # not a real terminal; rich will cope
+
+
+_use_utf8()
 
 app = typer.Typer(
     add_completion=False,
@@ -31,15 +50,43 @@ def _format_due(note: Note) -> str:
 
 @app.command()
 def add(text: str = typer.Argument(..., help="The note, in your own words.")) -> None:
-    """Capture a note."""
-    try:
-        with repo.open_db() as conn:
+    """Capture a note and work out what it is."""
+    with repo.open_db() as conn:
+        # Write it down first. Whatever the brain does next, the note is safe.
+        try:
             note = repo.add_note(conn, text)
-    except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(code=1) from exc
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
 
-    console.print(f"[green]captured[/green] #{note.id}  {note.text}")
+        console.print(f"[green]captured[/green] #{note.id}  {note.text}")
+
+        def persist(result: ClassifiedNote) -> None:
+            repo.apply_classification(
+                conn,
+                result.note_id,
+                result.classification.kind,
+                result.classification.due_at,
+            )
+
+        try:
+            classified = asyncio.run(run_capture(note.id, note.text, persist))
+        except Exception as exc:  # the note is already saved; never lose it over this
+            console.print(f"[yellow]couldn't classify it just now:[/yellow] {exc}")
+            console.print("[dim]it's saved as unclassified — try `axon list`[/dim]")
+            raise typer.Exit(code=1) from exc
+
+    verdict = classified.classification
+    style = _KIND_STYLE[verdict.kind]
+    console.print(f"  -> [{style}]{verdict.kind.value}[/]  [dim]({verdict.reason})[/dim]")
+
+    if verdict.due_at:
+        local = verdict.due_at.astimezone()
+        console.print(f"  -> due [bold]{local.strftime('%a %d %b %Y at %H:%M')}[/bold]")
+    if verdict.recurring:
+        console.print("  -> [yellow]repeats[/yellow] [dim](V1 fires once — recurrence comes later)[/dim]")
+    if verdict.risky:
+        console.print("  -> [red]risky[/red] [dim](will need your OK before Axon acts)[/dim]")
 
 
 @app.command("list")

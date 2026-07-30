@@ -1,0 +1,27 @@
+# Axon — direct dependencies, pinned to versions verified working on
+# Windows 11 + Python 3.11.9 on 2026-07-30.
+# Everything here is free. No paid service, no API key required to run.
+
+# --- the brain: workflow engine with durable human-approval pauses ---
+agent-framework-core==1.12.1
+
+# --- long-term memory (all local, no key) ---
+mem0ai==2.0.14         # memory layer
+qdrant-client==1.18.0  # vector store, used in local on-disk mode (no server)
+fastembed==0.8.0       # local ONNX embeddings, no key
+
+# --- scheduling + time understanding ---
+APScheduler==3.11.3    # fires reminders, job store persisted to SQLite
+dateparser==1.4.1      # turns "in 5 days" / "at 5pm" into a real datetime
+
+# --- interface + plumbing ---
+typer==0.27.0          # the `axon` CLI
+win11toast==0.36.3     # real Windows notifications (Windows-only, degrades to console)
+python-dotenv==1.2.2   # reads .env
+
+# --- tests ---
+pytest==9.1.1
+pytest-asyncio==1.4.0
+
+# --- Step 6 (optional, only if you add a free Gemini key) ---
+# agent-framework-openai==1.11.0   # talks to Gemini's OpenAI-compatible endpoint

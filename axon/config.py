@@ -24,6 +24,8 @@ class Settings:
     data_dir: Path
     embed_model: str
     gemini_api_key: str | None
+    github_username: str | None = None
+    projects_dir: Path = Path("./projects")
 
     @property
     def db_path(self) -> Path:
@@ -48,10 +50,13 @@ class Settings:
 
 def load_settings() -> Settings:
     key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    username = (os.getenv("GITHUB_USERNAME") or "").strip()
     return Settings(
         data_dir=Path(os.getenv("AXON_DATA_DIR") or "./data").resolve(),
         embed_model=os.getenv("AXON_EMBED_MODEL") or DEFAULT_EMBED_MODEL,
         gemini_api_key=key or None,
+        github_username=username or None,
+        projects_dir=Path(os.getenv("AXON_PROJECTS_DIR") or "./projects").resolve(),
     )
 
 

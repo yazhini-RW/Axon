@@ -12,7 +12,12 @@ from axon.db import repo
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     """Point Axon at a throwaway data directory, never the real one."""
-    return Settings(data_dir=tmp_path, embed_model=DEFAULT_EMBED_MODEL, gemini_api_key=None)
+    return Settings(
+        data_dir=tmp_path / "data",
+        embed_model=DEFAULT_EMBED_MODEL,
+        gemini_api_key=None,
+        projects_dir=tmp_path / "projects",
+    )
 
 
 @pytest.fixture

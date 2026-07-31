@@ -36,7 +36,6 @@ from agent_framework import (
 from axon.brain.classifier import Brain, first_word, get_brain
 from axon.config import Settings, get_settings
 from axon.hands.base import Hand
-from axon.hands.noop import NoopHand
 from axon.models import (
     ApprovalOutcome,
     ApprovalRequest,
@@ -69,6 +68,11 @@ CHECKPOINT_TYPES = [
 
 PersistFn = Callable[[ApprovalOutcome], None]
 RememberFn = Callable[[ClassifiedNote], None]
+# A resolver, not a fixed Hand: `execute` may run after a resume in a brand new
+# process (same reason ApprovalRequest carries the whole note, not just an id — see
+# ADR-0003), so which hand acted on a note must be re-derivable from the note's text
+# alone, never from in-memory state that only existed at prepare time.
+HandResolver = Callable[[str], Hand]
 
 
 def _describe_action(text: str) -> str:
@@ -111,15 +115,16 @@ class RememberExecutor(Executor):
 class PrepareExecutor(Executor):
     """Step three: the safe half of a hand — build, draft, stage. Never risky."""
 
-    def __init__(self, hand: Hand, id: str = "prepare") -> None:
+    def __init__(self, resolve_hand: HandResolver, id: str = "prepare") -> None:
         super().__init__(id=id)
-        self._hand = hand
+        self._resolve_hand = resolve_hand
 
     @handler
     async def prepare(
         self, note: ClassifiedNote, ctx: WorkflowContext[PreparedNote]
     ) -> None:
-        await ctx.send_message(await self._hand.prepare(note))
+        hand = self._resolve_hand(note.text)
+        await ctx.send_message(await hand.prepare(note))
 
 
 class GateExecutor(Executor):
@@ -138,7 +143,14 @@ class GateExecutor(Executor):
             await ctx.send_message(ApprovalOutcome(note=prepared.note, approved=True))
             return
         await ctx.request_info(
-            ApprovalRequest(note=prepared.note, action=_describe_action(prepared.note.text)), bool
+            ApprovalRequest(
+                note=prepared.note,
+                action=_describe_action(prepared.note.text),
+                detail=prepared.detail,
+                project_dir=prepared.project_dir,
+                push_url=prepared.push_url,
+            ),
+            bool,
         )
 
     @response_handler
@@ -154,16 +166,17 @@ class GateExecutor(Executor):
 class ExecuteExecutor(Executor):
     """Step five: the risky half of a hand — only runs once approved."""
 
-    def __init__(self, hand: Hand, id: str = "execute") -> None:
+    def __init__(self, resolve_hand: HandResolver, id: str = "execute") -> None:
         super().__init__(id=id)
-        self._hand = hand
+        self._resolve_hand = resolve_hand
 
     @handler
     async def run_execute(
         self, outcome: ApprovalOutcome, ctx: WorkflowContext[ApprovalOutcome]
     ) -> None:
         if outcome.approved:
-            await self._hand.execute(outcome)
+            hand = self._resolve_hand(outcome.note.text)
+            await hand.execute(outcome)
         await ctx.send_message(outcome)
 
 
@@ -186,28 +199,42 @@ def checkpoint_storage(settings: Settings) -> FileCheckpointStorage:
     return FileCheckpointStorage(settings.checkpoint_dir, allowed_checkpoint_types=CHECKPOINT_TYPES)
 
 
+def _default_hand_resolver(settings: Settings) -> HandResolver:
+    """Deferred import: axon.hands imports axon.brain.workflow's own models, and
+    keeping this out of module scope avoids a circular import at import time.
+
+    Closes over `settings` so a GitHubHand resolved mid-workflow (including after a
+    resume in a fresh process) writes into the same projects_dir the caller configured
+    — never silently falls back to the real one, which bit tests when this was missed.
+    """
+    from axon.hands import pick_hand
+
+    return lambda text: pick_hand(text, settings=settings)
+
+
 def build_workflow(
     persist: PersistFn,
     remember: RememberFn | None = None,
     brain: Brain | None = None,
-    hand: Hand | None = None,
+    hand_resolver: HandResolver | None = None,
     settings: Settings | None = None,
 ) -> Workflow:
     """classify -> remember -> prepare -> gate -> execute -> persist.
 
     `remember` is optional so tests can exercise the graph without loading a 134MB
-    embedding model. `hand` defaults to NoopHand, so until Step 8 adds a real one this
-    graph behaves exactly like V1's classify -> remember -> gate -> persist.
+    embedding model. `hand_resolver` maps a note's text to the Hand that should act on
+    it — defaulting to `axon.hands.pick_hand`, which returns NoopHand unless the note
+    looks GitHub-shaped (Step 8).
     """
     settings = settings or get_settings()
     settings.ensure_dirs()
 
-    hand = hand or NoopHand()
+    resolve_hand = hand_resolver or _default_hand_resolver(settings)
     classify = ClassifyExecutor(brain or get_brain(settings))
     recall = RememberExecutor(remember or (lambda _note: None))
-    prepare = PrepareExecutor(hand)
+    prepare = PrepareExecutor(resolve_hand)
     gate = GateExecutor()
-    act = ExecuteExecutor(hand)
+    act = ExecuteExecutor(resolve_hand)
     store = PersistExecutor(persist)
 
     return (
@@ -303,12 +330,14 @@ async def run_capture(
     persist: PersistFn,
     remember: RememberFn | None = None,
     brain: Brain | None = None,
-    hand: Hand | None = None,
+    hand_resolver: HandResolver | None = None,
     settings: Settings | None = None,
 ) -> CaptureResult:
     """Push one note through the brain. Either it completes, or it's now pending."""
     settings = settings or get_settings()
-    workflow = build_workflow(persist, remember=remember, brain=brain, hand=hand, settings=settings)
+    workflow = build_workflow(
+        persist, remember=remember, brain=brain, hand_resolver=hand_resolver, settings=settings
+    )
     result = await workflow.run(ClassifyRequest(note_id=note_id, text=text))
     return await _interpret(result, note_id, settings)
 
@@ -319,12 +348,14 @@ async def resume_capture(
     persist: PersistFn,
     remember: RememberFn | None = None,
     brain: Brain | None = None,
-    hand: Hand | None = None,
+    hand_resolver: HandResolver | None = None,
     settings: Settings | None = None,
 ) -> CaptureResult:
     """Resume a paused note with the human's answer. May run in a fresh process."""
     settings = settings or get_settings()
-    workflow = build_workflow(persist, remember=remember, brain=brain, hand=hand, settings=settings)
+    workflow = build_workflow(
+        persist, remember=remember, brain=brain, hand_resolver=hand_resolver, settings=settings
+    )
     result = await workflow.run(
         responses={approval.request_id: approved}, checkpoint_id=approval.checkpoint_id
     )

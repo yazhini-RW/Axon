@@ -226,7 +226,7 @@ async def test_noop_hand_leaves_the_non_risky_path_unchanged(settings: Settings)
 
 async def test_prepare_always_runs_even_for_non_risky_notes(settings: Settings) -> None:
     hand = _RecordingHand()
-    await run_capture(1, "fix the login bug", lambda _o: None, hand=hand, settings=settings)
+    await run_capture(1, "fix the login bug", lambda _o: None, hand_resolver=lambda _t: hand, settings=settings)
 
     assert len(hand.prepared) == 1
     assert hand.prepared[0].text == "fix the login bug"
@@ -234,7 +234,7 @@ async def test_prepare_always_runs_even_for_non_risky_notes(settings: Settings) 
 
 async def test_execute_runs_on_the_non_risky_path_without_a_gate_pause(settings: Settings) -> None:
     hand = _RecordingHand()
-    capture = await run_capture(1, "fix the login bug", lambda _o: None, hand=hand, settings=settings)
+    capture = await run_capture(1, "fix the login bug", lambda _o: None, hand_resolver=lambda _t: hand, settings=settings)
 
     assert capture.completed is not None
     assert len(hand.executed) == 1
@@ -244,24 +244,24 @@ async def test_execute_runs_on_the_non_risky_path_without_a_gate_pause(settings:
 async def test_execute_does_not_run_until_approval(settings: Settings) -> None:
     hand = _RecordingHand()
     capture = await run_capture(
-        1, "push the axon repo to github", lambda _o: None, hand=hand, settings=settings
+        1, "push the axon repo to github", lambda _o: None, hand_resolver=lambda _t: hand, settings=settings
     )
 
     assert capture.pending is not None
     assert hand.prepared, "prepare is safe, must run before the gate"
     assert not hand.executed, "execute is risky, must wait for approval"
 
-    await resume_capture(capture.pending, True, lambda _o: None, hand=hand, settings=settings)
+    await resume_capture(capture.pending, True, lambda _o: None, hand_resolver=lambda _t: hand, settings=settings)
     assert len(hand.executed) == 1
 
 
 async def test_execute_does_not_run_on_rejection(settings: Settings) -> None:
     hand = _RecordingHand()
     capture = await run_capture(
-        1, "push the axon repo to github", lambda _o: None, hand=hand, settings=settings
+        1, "push the axon repo to github", lambda _o: None, hand_resolver=lambda _t: hand, settings=settings
     )
 
-    await resume_capture(capture.pending, False, lambda _o: None, hand=hand, settings=settings)
+    await resume_capture(capture.pending, False, lambda _o: None, hand_resolver=lambda _t: hand, settings=settings)
     assert not hand.executed, "a rejected note must never reach execute"
 
 

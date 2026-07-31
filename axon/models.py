@@ -112,6 +112,10 @@ class PreparedNote(BaseModel):
 
     note: ClassifiedNote
     detail: str = ""  # e.g. "committed to ./projects/12-foo" — shown in `axon approvals`
+    # Set only by GitHubHand.prepare() (Step 8). None for every other hand, including
+    # NoopHand — `execute` checks this before doing anything push-shaped.
+    project_dir: str | None = None
+    push_url: str | None = None
 
 
 class ApprovalRequest(BaseModel):
@@ -122,10 +126,18 @@ class ApprovalRequest(BaseModel):
     and cannot rely on any in-memory state to still be around. Carried inside a workflow
     checkpoint, so it must stay in this module and be registered in
     axon.brain.workflow.CHECKPOINT_TYPES. See ADR-0003.
+
+    `detail` / `project_dir` / `push_url` mirror PreparedNote's fields (Step 8) — carried
+    here too so `axon approvals` can show exactly what was built and exactly what a
+    `git push` would run, before the human approves. See docs/V2-PLAN.md Step 9's
+    "no surprises" requirement.
     """
 
     note: ClassifiedNote
     action: str
+    detail: str = ""
+    project_dir: str | None = None
+    push_url: str | None = None
 
 
 class ApprovalOutcome(BaseModel):

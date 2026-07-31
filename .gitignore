@@ -4,6 +4,9 @@
 # Axon runtime data — the database, vector store and workflow checkpoints
 data/
 
+# real deliverables Axon builds for you — separate from Axon's own internal data
+projects/
+
 # secrets
 .env
 

@@ -214,7 +214,22 @@ docs, media creation, research and summarise, query data. Wire the easy ones thr
 
 ---
 
-## 7. Start here
+## 7. The ruflo agents
+
+11 agent files live in `.claude/agents/` (core, swarm, testing, plus python-specialist).
+They load natively as Claude Code agents — free, no MCP server needed. The inert
+`mcp__claude-flow__*` sections in some of them are harmless no-ops.
+
+**Do not run `production-validator` on this project.** It insists no mocks remain in the
+codebase. Axon's mock brain and mock builder are *required product features* — they are
+what make it run for free with no key. This exception is recorded in
+[docs/SPEC.md](SPEC.md).
+
+Note that `core/coder.md` reads `docs/SPEC.md` and `docs/adr/*.md` before implementing
+and treats ADRs as **binding**. That is intentional — it is what stops an agent quietly
+swapping the stack.
+
+## 8. Start here
 
 Read this file, confirm you understand the state, then **propose Step 7 and wait for my
 go-ahead before writing code.**

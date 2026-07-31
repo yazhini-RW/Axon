@@ -18,7 +18,7 @@ from pathlib import Path
 from axon.config import Settings, get_settings
 from axon.models import Note, NoteKind, NoteStatus, utcnow
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS notes (
@@ -49,6 +49,15 @@ CREATE TABLE IF NOT EXISTS approvals (
     resolved_at   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+"""
+
+# Step 9: what a hand's prepare() actually did, so `axon approvals` can show the exact
+# `git push` command before the human approves it — no surprises. See
+# docs/V2-PLAN.md "Practical constraints". NULL for every hand that isn't GitHubHand.
+_SCHEMA_V3 = """
+ALTER TABLE approvals ADD COLUMN detail TEXT;
+ALTER TABLE approvals ADD COLUMN project_dir TEXT;
+ALTER TABLE approvals ADD COLUMN push_url TEXT;
 """
 
 
@@ -93,6 +102,8 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.executescript(_SCHEMA_V1)
     if version < 2:
         conn.executescript(_SCHEMA_V2)
+    if version < 3:
+        conn.executescript(_SCHEMA_V3)
     if version != SCHEMA_VERSION:
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -186,27 +197,34 @@ class Approval:
     action: str
     status: str  # "pending" | "approved" | "rejected"
     note_text: str = ""
+    detail: str = ""
+    project_dir: str | None = None
+    push_url: str | None = None
 
 
 def create_approval(
-    conn: sqlite3.Connection, note_id: int, request_id: str, checkpoint_id: str, action: str
+    conn: sqlite3.Connection,
+    note_id: int,
+    request_id: str,
+    checkpoint_id: str,
+    action: str,
+    *,
+    detail: str = "",
+    project_dir: str | None = None,
+    push_url: str | None = None,
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO approvals (note_id, request_id, checkpoint_id, action, status, created_at) "
-        "VALUES (?,?,?,?, 'pending', ?)",
-        (note_id, request_id, checkpoint_id, action, _to_db(utcnow())),
+        "INSERT INTO approvals "
+        "(note_id, request_id, checkpoint_id, action, status, created_at, "
+        " detail, project_dir, push_url) "
+        "VALUES (?,?,?,?, 'pending', ?, ?, ?, ?)",
+        (note_id, request_id, checkpoint_id, action, _to_db(utcnow()),
+         detail, project_dir, push_url),
     )
     return cur.lastrowid
 
 
-def get_approval(conn: sqlite3.Connection, approval_id: int) -> Approval | None:
-    row = conn.execute(
-        "SELECT a.*, n.text AS note_text FROM approvals a "
-        "JOIN notes n ON n.id = a.note_id WHERE a.id = ?",
-        (approval_id,),
-    ).fetchone()
-    if row is None:
-        return None
+def _row_to_approval(row: sqlite3.Row) -> Approval:
     return Approval(
         id=row["id"],
         note_id=row["note_id"],
@@ -215,7 +233,19 @@ def get_approval(conn: sqlite3.Connection, approval_id: int) -> Approval | None:
         action=row["action"],
         status=row["status"],
         note_text=row["note_text"],
+        detail=row["detail"] or "",
+        project_dir=row["project_dir"],
+        push_url=row["push_url"],
     )
+
+
+def get_approval(conn: sqlite3.Connection, approval_id: int) -> Approval | None:
+    row = conn.execute(
+        "SELECT a.*, n.text AS note_text FROM approvals a "
+        "JOIN notes n ON n.id = a.note_id WHERE a.id = ?",
+        (approval_id,),
+    ).fetchone()
+    return _row_to_approval(row) if row else None
 
 
 def list_pending_approvals(conn: sqlite3.Connection) -> list[Approval]:
@@ -224,15 +254,7 @@ def list_pending_approvals(conn: sqlite3.Connection) -> list[Approval]:
         "JOIN notes n ON n.id = a.note_id WHERE a.status = 'pending' ORDER BY a.id"
     ).fetchall()
     return [
-        Approval(
-            id=r["id"],
-            note_id=r["note_id"],
-            request_id=r["request_id"],
-            checkpoint_id=r["checkpoint_id"],
-            action=r["action"],
-            status=r["status"],
-            note_text=r["note_text"],
-        )
+        _row_to_approval(r)
         for r in rows
     ]
 

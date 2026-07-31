@@ -127,13 +127,45 @@ async def test_prepare_scopes_the_project_dir_to_settings(settings: Settings) ->
     assert Path(prepared.project_dir).is_relative_to(settings.projects_dir)
 
 
-async def test_execute_is_a_noop_in_step_8(settings: Settings) -> None:
-    """Step 9 adds the real push. For now execute must do nothing at all."""
+async def test_execute_without_a_github_username_raises_clearly(settings: Settings) -> None:
+    """No GITHUB_USERNAME configured means Axon has no push URL. Must fail loudly,
+    not silently do nothing — the commit is still safe locally either way."""
     from axon.models import ApprovalOutcome
 
-    hand = GitHubHand(settings=settings)
+    hand = GitHubHand(settings=settings)  # settings fixture has no github_username
     note = _note("build a github repo for a todo app", note_id=11)
+    await hand.prepare(note)
+    outcome = ApprovalOutcome(note=note, approved=True)
+
+    with pytest.raises(RuntimeError, match="GITHUB_USERNAME"):
+        await hand.execute(outcome)
+
+
+async def test_execute_pushes_to_the_configured_remote(settings: Settings, tmp_path: Path) -> None:
+    """Stands in a local bare repo for "GitHub", since there's no real remote in tests.
+    Proves the whole prepare -> approve -> execute chain ends with real commits landing
+    on the remote, which is the actual thing Step 9 promises."""
+    import subprocess
+
+    from axon.models import ApprovalOutcome
+
+    bare_repo = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(bare_repo)], check=True, capture_output=True)
+
+    note = _note("build a github repo for a todo app", note_id=12)
+    hand = GitHubHand(settings=settings)
     prepared = await hand.prepare(note)
 
-    result = await hand.execute(ApprovalOutcome(note=note, approved=True))
-    assert result is None
+    # Point push_url at the local bare repo instead of a real GitHub URL — execute()
+    # re-derives the URL each time rather than trusting prepare()'s output (see the
+    # docstring on GitHubHand.execute), so patching the method is enough here.
+    hand._push_url = lambda _note: str(bare_repo)  # noqa: SLF001
+
+    await hand.execute(ApprovalOutcome(note=note, approved=True))
+
+    log = subprocess.run(
+        ["git", "log", "--oneline"], cwd=bare_repo,
+        capture_output=True, text=True, check=True,
+    )
+    assert "Axon:" in log.stdout
+    assert Path(prepared.project_dir).exists(), "the local commit is still there too"

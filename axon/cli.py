@@ -94,6 +94,9 @@ def add(text: str = typer.Argument(..., help="The note, in your own words.")) ->
             approval_id = repo.create_approval(
                 conn, pending.note_id, pending.request_id, pending.checkpoint_id,
                 pending.request.action,
+                detail=pending.request.detail,
+                project_dir=pending.request.project_dir,
+                push_url=pending.request.push_url,
             )
             # The brain already knows what this is (kind, due_at) — only *acting* on it
             # is on hold. `axon list` should say "task", not "unclassified", while it
@@ -111,6 +114,10 @@ def add(text: str = typer.Argument(..., help="The note, in your own words.")) ->
                 f"  -> [red]needs your OK[/red] to {pending.request.action}"
                 f" [dim](this is where Axon always stops and asks)[/dim]"
             )
+            if pending.request.detail:
+                console.print(f"     [dim]{pending.request.detail}[/dim]")
+            if pending.request.push_url:
+                console.print(f"     [dim]will run: git push {pending.request.push_url}[/dim]")
             console.print(
                 f"     [bold]axon approve {approval_id}[/bold]"
                 f"  or  [bold]axon reject {approval_id}[/bold]"
@@ -236,9 +243,13 @@ def approvals() -> None:
     table.add_column("#", justify="right", style="dim")
     table.add_column("wants to")
     table.add_column("note")
+    table.add_column("exact command", style="dim")
 
     for approval in pending:
-        table.add_row(str(approval.id), f"[yellow]{approval.action}[/yellow]", approval.note_text)
+        command = f"git push {approval.push_url}" if approval.push_url else ""
+        table.add_row(
+            str(approval.id), f"[yellow]{approval.action}[/yellow]", approval.note_text, command
+        )
     console.print(table)
     console.print("\n[dim]axon approve <#>  or  axon reject <#>[/dim]")
 

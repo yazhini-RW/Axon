@@ -99,8 +99,10 @@ async def test_a_paused_note_still_carries_its_classification(settings: Settings
 
 
 async def test_approving_resumes_and_completes(settings: Settings) -> None:
+    """Risky but not GitHub-shaped, deliberately — this exercises NoopHand's path
+    through the gate, not GitHubHand's real push. See tests/test_github_hand.py."""
     with repo.open_db(settings) as conn:
-        note = repo.add_note(conn, "push the axon repo to github")
+        note = repo.add_note(conn, "send the invoice to the client")
         persist, seen = _persist_into(conn)
 
         capture = await run_capture(note.id, note.text, persist, settings=settings)
@@ -119,7 +121,7 @@ async def test_approving_resumes_and_completes(settings: Settings) -> None:
 
 async def test_rejecting_resumes_and_blocks(settings: Settings) -> None:
     with repo.open_db(settings) as conn:
-        note = repo.add_note(conn, "push the axon repo to github")
+        note = repo.add_note(conn, "send the invoice to the client")
         persist, seen = _persist_into(conn)
 
         capture = await run_capture(note.id, note.text, persist, settings=settings)
@@ -186,7 +188,7 @@ async def test_completed_runs_leave_no_checkpoints_once_swept(settings: Settings
 
 async def test_a_pending_approvals_checkpoint_survives_the_sweep(settings: Settings) -> None:
     capture = await run_capture(
-        1, "push the axon repo to github", lambda _o: None, settings=settings
+        1, "send the invoice to the client", lambda _o: None, settings=settings
     )
     keep = {capture.pending.checkpoint_id}
 

@@ -24,7 +24,7 @@ rule-based brain and local embeddings, fully offline.
 - [x] **Step 1** — capture notes (`axon add`, `axon list`)
 - [x] **Step 2** — the brain classifies each note
 - [x] **Step 3** — memory and meaning-based `axon recall`
-- [ ] Step 4 — scheduler and notifications (`axon run`)
+- [x] **Step 4** — scheduler and notifications (`axon run`)
 - [ ] Step 5 — the human approval pause (`axon approvals`, `axon approve`)
 - [ ] Step 6 — optional Gemini brain
 

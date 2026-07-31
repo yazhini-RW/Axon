@@ -11,7 +11,7 @@ from rich.table import Table
 
 from axon.config import get_settings
 from axon.db import repo
-from axon.models import ClassifiedNote, Note, NoteKind
+from axon.models import ClassifiedNote, Note, NoteKind, utcnow
 
 def _use_utf8() -> None:
     """The Windows console defaults to cp1252, which turns an em-dash into a black
@@ -96,6 +96,11 @@ def add(text: str = typer.Argument(..., help="The note, in your own words.")) ->
     if verdict.due_at:
         local = verdict.due_at.astimezone()
         console.print(f"  -> due [bold]{local.strftime('%a %d %b %Y at %H:%M')}[/bold]")
+        if verdict.due_at <= utcnow():
+            console.print(
+                "  -> [yellow]that time has already passed[/yellow]"
+                " [dim](it will fire as soon as `axon run` is going)[/dim]"
+            )
     if verdict.recurring:
         console.print("  -> [yellow]repeats[/yellow] [dim](V1 fires once — recurrence comes later)[/dim]")
     if verdict.risky:
@@ -189,6 +194,26 @@ def recall(
             "\n[yellow]these all look about equally similar[/yellow]"
             " [dim]- Axon isn't confident which you meant[/dim]"
         )
+
+
+@app.command()
+def run() -> None:
+    """Start the scheduler and wait. Reminders fire as notifications."""
+    from axon.scheduler.runner import SYNC_SECONDS, ReminderService
+
+    service = ReminderService()
+    counts = service.start()
+
+    console.print("[green]axon is running[/green] [dim](ctrl-c to stop)[/dim]")
+    if counts["fired"]:
+        console.print(f"  fired [yellow]{counts['fired']}[/yellow] overdue reminder(s) just now")
+    if counts["missed"]:
+        console.print(f"  marked [dim]{counts['missed']}[/dim] as missed (more than a day late)")
+    console.print(f"  watching [bold]{counts['scheduled']}[/bold] reminder(s)")
+    console.print(f"[dim]  checking for new notes every {SYNC_SECONDS}s[/dim]")
+
+    service.run_forever()
+    console.print("\n[dim]stopped[/dim]")
 
 
 @app.command()

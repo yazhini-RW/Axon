@@ -131,6 +131,23 @@ def test_harmless_notes_are_not_flagged(brain: MockBrain, text: str) -> None:
     assert brain.classify(text).risky is False
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "the deploy key is in bitwarden",
+        "the post office closes at 6",
+        "my order number is 12345",
+    ],
+)
+def test_a_fact_is_never_risky(brain: MockBrain, text: str) -> None:
+    """These contain risky words but are things to remember, not things to do.
+
+    Risk is about what Axon will *do*, and it never acts on a fact.
+    """
+    result = brain.classify(text)
+    assert result.risky is False, f"{text!r} is a fact, nothing to approve"
+
+
 def test_recurring_notes_are_flagged(brain: MockBrain) -> None:
     result = brain.classify("email the weekly report every Friday")
     assert result.recurring is True

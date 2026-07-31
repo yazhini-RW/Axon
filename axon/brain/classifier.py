@@ -181,9 +181,12 @@ class MockBrain:
                 else "phrased as something to do",
             )
 
+        # A fact is never risky. Risk is about what Axon will *do*, and it will never
+        # act on a fact — "the deploy key is in bitwarden" contains "deploy" but is
+        # just something to remember. See docs/adr/0003-human-approval-checkpoint.md.
         return Classification(
             kind=NoteKind.FACT,
-            risky=risky,
+            risky=False,
             reason="no time and no action, so worth remembering",
         )
 

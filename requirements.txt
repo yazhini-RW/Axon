@@ -11,7 +11,8 @@ qdrant-client==1.18.0  # vector store, used in local on-disk mode (no server)
 fastembed==0.8.0       # local ONNX embeddings, no key
 
 # --- scheduling + time understanding ---
-APScheduler==3.11.3    # fires reminders, job store persisted to SQLite
+APScheduler==3.11.3    # fires reminders (in-memory jobs; SQLite is the source of
+                       # truth and the schedule is rebuilt from it — see ADR-0004)
 dateparser==1.4.1      # turns "in 5 days" / "at 5pm" into a real datetime
 
 # --- interface + plumbing ---

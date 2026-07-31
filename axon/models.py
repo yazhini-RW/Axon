@@ -29,6 +29,7 @@ class NoteStatus(str, Enum):
     SCHEDULED = "scheduled"          # a reminder with a job waiting to fire
     AWAITING_APPROVAL = "awaiting_approval"  # paused, needs a human OK
     DONE = "done"
+    MISSED = "missed"                # was due so long ago that firing it would be noise
     BLOCKED = "blocked"              # the human said no
 
 

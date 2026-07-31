@@ -101,8 +101,9 @@ V1 is done when all of these are true:
   genuine time expressions first and only those fragments are parsed. There is a test
   pinning this (`test_bare_prepositions_are_never_read_as_dates`) — do not relax it.
 - **A resolved time can land in the past.** "call mum this morning" typed at 6pm resolves
-  to 09:00 *today*. Step 4 must decide what to do with an already-due reminder (fire
-  immediately, or warn) rather than scheduling a job that can never run.
+  to 09:00 *today*. `axon add` warns when this happens. The daemon then fires anything
+  due within the last 24 hours immediately, marked *(overdue)*, and marks anything older
+  as `missed` without notifying — see [ADR-0004](adr/0004-scheduler-design.md).
 - **Recurring notes fire once in V1.** "every Friday" is detected and flagged, and only
   the next occurrence is scheduled. Real recurrence is a later step, and Axon says so
   at capture time rather than silently promising weekly behaviour.

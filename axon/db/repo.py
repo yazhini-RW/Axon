@@ -121,6 +121,27 @@ def get_note(conn: sqlite3.Connection, note_id: int) -> Note | None:
     return _row_to_note(row) if row else None
 
 
+def set_status(conn: sqlite3.Connection, note_id: int, status: NoteStatus) -> None:
+    conn.execute("UPDATE notes SET status = ? WHERE id = ?", (status.value, note_id))
+
+
+def pending_reminders(conn: sqlite3.Connection) -> list[Note]:
+    """Reminders with a time that haven't fired yet.
+
+    This table is the source of truth for what still needs to happen — the scheduler
+    rebuilds itself from this on every start. See docs/adr/0004-scheduler-design.md.
+    """
+    rows = conn.execute(
+        """
+        SELECT * FROM notes
+        WHERE kind = ? AND due_at IS NOT NULL AND status IN (?, ?)
+        ORDER BY due_at
+        """,
+        (NoteKind.REMINDER.value, NoteStatus.CLASSIFIED.value, NoteStatus.SCHEDULED.value),
+    ).fetchall()
+    return [_row_to_note(r) for r in rows]
+
+
 def list_notes(conn: sqlite3.Connection, limit: int = 20) -> list[Note]:
     rows = conn.execute(
         "SELECT * FROM notes ORDER BY id DESC LIMIT ?", (limit,)

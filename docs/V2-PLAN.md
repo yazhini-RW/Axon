@@ -68,6 +68,33 @@ pytest -q                       # 91 tests
 pytest -q -m "not slow"         # skip the 10 that load a 134MB model
 ```
 
+### Why each finished step is the way it is
+
+The commit messages are long and deliberately explain the reasoning, the bugs found, and
+the decisions changed mid-step. **Read them before altering existing behaviour:**
+
+```bash
+git log                         # full messages, not --oneline
+git show <hash>                 # one step in detail
+```
+
+Short version of what each step settled:
+
+- **Step 0** — verified the framework's real API by spike rather than assumption, and
+  found the human-in-the-loop API is nothing like older material describes.
+- **Step 1** — SQLite with WAL (so daemon + CLI coexist) and `PRAGMA user_version`
+  migrations. Currently at schema **v2**.
+- **Step 2** — the rule-based brain. Most of its complexity exists because `dateparser`
+  cannot be trusted with raw text.
+- **Step 3** — memory. Ranking is **relative, not absolute**, because measured scores
+  bunch into a narrow 0.4–0.7 band and fixed cutoffs failed in both directions.
+- **Step 4** — the scheduler design changed mid-step; see ADR-0004 for why the
+  persistent job store was the wrong tool.
+- **Step 5** — the approval gate, proven to resume across separate processes. Also fixed
+  the checkpoint leak from Step 2.
+- **Step 6** — Gemini behind the same `Brain` interface. Made `Brain.classify()` async
+  for both brains. Risk detection is never trusted to the LLM alone.
+
 ---
 
 ## 4. Read these before changing anything

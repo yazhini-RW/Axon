@@ -24,5 +24,6 @@ python-dotenv==1.2.2   # reads .env
 pytest==9.1.1
 pytest-asyncio==1.4.0
 
-# --- Step 6 (optional, only if you add a free Gemini key) ---
-# agent-framework-openai==1.11.0   # talks to Gemini's OpenAI-compatible endpoint
+# --- Step 6: only used if GEMINI_API_KEY is set (no native Gemini connector exists;
+# Gemini's OpenAI-compatible endpoint is used instead — see ADR-0005) ---
+agent-framework-openai==1.11.0

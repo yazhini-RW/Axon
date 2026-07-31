@@ -81,7 +81,7 @@ class ClassifyExecutor(Executor):
     async def classify(
         self, request: ClassifyRequest, ctx: WorkflowContext[ClassifiedNote]
     ) -> None:
-        result = self._brain.classify(request.text)
+        result = await self._brain.classify(request.text)
         await ctx.send_message(
             ClassifiedNote(note_id=request.note_id, text=request.text, classification=result)
         )

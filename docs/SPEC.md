@@ -81,6 +81,14 @@ V1 is done when all of these are true:
 
 ---
 
+## Step 6: the optional Gemini brain
+
+With `GEMINI_API_KEY` set, `axon add` uses Google Gemini (free tier) instead of the mock
+brain — same interface, same output shape, no other command changes. See
+[ADR-0005](adr/0005-gemini-brain.md) for how, and its Limits section for what has and
+has not actually been run against Google's servers (no key was available in this
+session; only the stubbed-client path is tested).
+
 ## Known limits (measured, not guessed)
 
 - **Embedding recall is imperfect, and scores bunch up.** Real measured scores sit in a

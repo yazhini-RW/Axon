@@ -135,17 +135,23 @@ def _looks_like_a_task(text: str) -> bool:
     return first_word(text) in _ACTION_VERBS or any(p in lowered for p in _TASK_PHRASES)
 
 
-def _is_risky(text: str) -> bool:
+def is_risky(text: str) -> bool:
     words = set(re.findall(r"[a-z]+", text.lower()))
     return bool(words & _RISKY_VERBS)
 
 
 class Brain(Protocol):
-    """Anything that can work out what a note is."""
+    """Anything that can work out what a note is.
+
+    async even though MockBrain never awaits anything: ClassifyExecutor runs inside the
+    workflow's own event loop, and a brain that talks to a real API (Gemini) cannot
+    block that loop or call asyncio.run() itself — the latter raises "cannot run event
+    loop while another loop is running". One interface, both brains obey it.
+    """
 
     name: str
 
-    def classify(self, text: str) -> Classification: ...
+    async def classify(self, text: str) -> Classification: ...
 
 
 class MockBrain:
@@ -153,11 +159,11 @@ class MockBrain:
 
     name = "mock"
 
-    def classify(self, text: str) -> Classification:
+    async def classify(self, text: str) -> Classification:
         lowered = text.lower()
         due, phrase = extract_due(text)
         recurring = bool(re.search(r"\bevery\b", lowered))
-        risky = _is_risky(text)
+        risky = is_risky(text)
 
         in_the_past = any(marker in lowered for marker in _PAST_MARKERS)
         if due is not None and in_the_past:
@@ -192,6 +198,16 @@ class MockBrain:
 
 
 def get_brain(settings=None) -> Brain:
-    """Pick a brain. Gemini arrives in Step 6; for now there is only the mock."""
-    del settings  # accepted already so callers don't have to change when Gemini lands
+    """Pick a brain: Gemini if a key is configured, the free mock otherwise.
+
+    Imports agent_framework.openai only in the key-present branch, so a machine with no
+    key never pays for that import or needs the package installed at all.
+    """
+    from axon.config import get_settings
+
+    settings = settings or get_settings()
+    if settings.gemini_api_key:
+        from axon.brain.gemini import GeminiBrain
+
+        return GeminiBrain(settings.gemini_api_key)
     return MockBrain()

@@ -26,7 +26,9 @@ rule-based brain and local embeddings, fully offline.
 - [x] **Step 3** — memory and meaning-based `axon recall`
 - [x] **Step 4** — scheduler and notifications (`axon run`)
 - [x] **Step 5** — the human approval pause (`axon approvals`, `axon approve`, `axon reject`)
-- [ ] Step 6 — optional Gemini brain
+- [x] **Step 6** — optional Gemini brain (set `GEMINI_API_KEY` to use it)
+
+**V1 is complete.**
 
 V2 adds the first real "hand": build code and push to GitHub, pausing for approval before
 the push. V3+ adds more hands — email, chat, browser, files, research.

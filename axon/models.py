@@ -70,6 +70,23 @@ class Classification(BaseModel):
     reason: str = ""
 
 
+class GeminiVerdict(BaseModel):
+    """The shape Gemini is asked to return, before Axon converts it to a Classification.
+
+    Deliberately not the same model as Classification: due_at here is a plain string
+    because it comes straight from an LLM's structured-output JSON, and free-text time
+    parsing is exactly what axon.brain.classifier already does well with dateparser.
+    Reusing that logic (rather than trusting Gemini's own date arithmetic) means both
+    brains land on the same, already-tested notion of "when".
+    """
+
+    kind: NoteKind
+    when: str | None = None  # e.g. "tomorrow morning" — parsed by extract_due(), not here
+    recurring: bool = False
+    risky: bool = False
+    reason: str = ""
+
+
 class ClassifyRequest(BaseModel):
     """Goes into the workflow."""
 

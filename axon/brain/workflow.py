@@ -1,17 +1,24 @@
 """The brain, as a Microsoft Agent Framework workflow.
 
-Right now it is two steps: work out what the note is, then write that down. It is built
-as a real workflow — named, with checkpoint storage wired in — because Step 5 inserts an
-approval gate into this same graph. See docs/adr/0001-microsoft-agent-framework.md.
+classify -> remember -> gate -> persist. `gate` is where risky notes pause for a human.
+See docs/adr/0001-microsoft-agent-framework.md and docs/adr/0003-human-approval-checkpoint.md.
 
-Framework gotchas, learned the hard way (ADR-0001): ctx.send_message and ctx.yield_output
-are async and must be awaited, and every type that can land in a checkpoint has to be
-registered by "module:qualname".
+Framework gotchas, learned the hard way (ADR-0001, ADR-0003):
+
+- ctx.send_message, ctx.request_info and ctx.yield_output are all async and must be
+  awaited.
+- every type that can land in a checkpoint has to be registered by "module:qualname",
+  and must live in a real module — never in __main__.
+- after a resume, the framework can still report IDLE_WITH_PENDING_REQUESTS even though
+  the response handler already produced its output. Do not trust that enum for "is this
+  finished" — check get_outputs() instead.
+- an ApprovalRequest carries the whole ClassifiedNote, not just an id, because the
+  response handler that reads it back may run in a different process, days later, with
+  no other state available.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Never
 
 from agent_framework import (
@@ -21,23 +28,46 @@ from agent_framework import (
     WorkflowBuilder,
     WorkflowContext,
     handler,
+    response_handler,
 )
 
-from axon.brain.classifier import Brain, get_brain
+from axon.brain.classifier import Brain, first_word, get_brain
 from axon.config import Settings, get_settings
-from axon.models import Classification, ClassifiedNote, ClassifyRequest
+from axon.models import (
+    ApprovalOutcome,
+    ApprovalRequest,
+    Classification,
+    ClassifiedNote,
+    ClassifyRequest,
+    NoteKind,
+)
 
 WORKFLOW_NAME = "axon_capture"
 
 # Checkpoint loading is allowlisted by "module:qualname". A type missing from this list
-# does not error loudly — the checkpoint just silently fails to load.
+# does not error loudly — the checkpoint just silently fails to load, and
+# list_checkpoints() returns an empty list with only a logged warning. This bit twice:
+# once for the top-level message types, and again for NoteKind — an enum *field inside*
+# Classification — which the pickler stores as its own type, not folded into its parent.
 CHECKPOINT_TYPES = [
     f"{model.__module__}:{model.__qualname__}"
-    for model in (ClassifyRequest, ClassifiedNote, Classification)
+    for model in (
+        ClassifyRequest, ClassifiedNote, Classification, ApprovalRequest, ApprovalOutcome, NoteKind,
+    )
+] + [
+    # A reminder's due_at is a timezone-aware datetime, and the parser attaches a real
+    # IANA zone (dateparser/system-local), not UTC — so this stdlib type rides along
+    # too. Found the same way as NoteKind: a silently-empty list_checkpoints().
+    "zoneinfo:ZoneInfo",
 ]
 
-PersistFn = Callable[[ClassifiedNote], None]
+PersistFn = Callable[[ApprovalOutcome], None]
 RememberFn = Callable[[ClassifiedNote], None]
+
+
+def _describe_action(text: str) -> str:
+    """A short label for what's being asked, e.g. 'push' from 'push the repo to github'."""
+    return first_word(text) or "act on this"
 
 
 class ClassifyExecutor(Executor):
@@ -72,8 +102,37 @@ class RememberExecutor(Executor):
         await ctx.send_message(note)
 
 
+class GateExecutor(Executor):
+    """Step three: risky notes stop here and wait for a human. See ADR-0003."""
+
+    def __init__(self, id: str = "gate") -> None:
+        super().__init__(id=id)
+
+    @handler
+    async def gate(
+        self, note: ClassifiedNote, ctx: WorkflowContext[ApprovalOutcome]
+    ) -> None:
+        if not note.classification.risky:
+            # Nothing to approve — pass straight through. `approved=True` here means
+            # "never needed approval", not "a human said yes".
+            await ctx.send_message(ApprovalOutcome(note=note, approved=True))
+            return
+        await ctx.request_info(
+            ApprovalRequest(note=note, action=_describe_action(note.text)), bool
+        )
+
+    @response_handler
+    async def resumed(
+        self,
+        original_request: ApprovalRequest,
+        approved: bool,
+        ctx: WorkflowContext[ApprovalOutcome],
+    ) -> None:
+        await ctx.send_message(ApprovalOutcome(note=original_request.note, approved=approved))
+
+
 class PersistExecutor(Executor):
-    """Step two: record the verdict."""
+    """Step four: record the verdict."""
 
     def __init__(self, persist: PersistFn, id: str = "persist") -> None:
         super().__init__(id=id)
@@ -81,10 +140,14 @@ class PersistExecutor(Executor):
 
     @handler
     async def persist(
-        self, note: ClassifiedNote, ctx: WorkflowContext[Never, ClassifiedNote]
+        self, outcome: ApprovalOutcome, ctx: WorkflowContext[Never, ApprovalOutcome]
     ) -> None:
-        self._persist(note)
-        await ctx.yield_output(note)
+        self._persist(outcome)
+        await ctx.yield_output(outcome)
+
+
+def checkpoint_storage(settings: Settings) -> FileCheckpointStorage:
+    return FileCheckpointStorage(settings.checkpoint_dir, allowed_checkpoint_types=CHECKPOINT_TYPES)
 
 
 def build_workflow(
@@ -93,7 +156,7 @@ def build_workflow(
     brain: Brain | None = None,
     settings: Settings | None = None,
 ) -> Workflow:
-    """classify -> remember -> persist.
+    """classify -> remember -> gate -> persist.
 
     `remember` is optional so tests can exercise the graph without loading a 134MB
     embedding model. The graph shape stays identical either way.
@@ -103,20 +166,92 @@ def build_workflow(
 
     classify = ClassifyExecutor(brain or get_brain(settings))
     recall = RememberExecutor(remember or (lambda _note: None))
+    gate = GateExecutor()
     store = PersistExecutor(persist)
 
     return (
         WorkflowBuilder(
             name=WORKFLOW_NAME,
             start_executor=classify,
-            checkpoint_storage=FileCheckpointStorage(
-                settings.checkpoint_dir, allowed_checkpoint_types=CHECKPOINT_TYPES
-            ),
+            checkpoint_storage=checkpoint_storage(settings),
         )
         .add_edge(classify, recall)
-        .add_edge(recall, store)
+        .add_edge(recall, gate)
+        .add_edge(gate, store)
         .build()
     )
+
+
+@dataclass
+class PendingApproval:
+    """A workflow paused mid-flight, waiting on a human."""
+
+    note_id: int
+    request_id: str
+    checkpoint_id: str
+    # Set when freshly paused. Reconstructing a PendingApproval from the `approvals`
+    # table to resume it later has no need for this — resume only needs the ids.
+    request: ApprovalRequest | None = None
+
+
+@dataclass
+class CaptureResult:
+    """Exactly one of these is set. Never both."""
+
+    completed: ApprovalOutcome | None = None
+    pending: PendingApproval | None = None
+
+
+async def _find_checkpoint_for_request(settings: Settings, request_id: str) -> str:
+    """Which checkpoint holds this pending request?
+
+    Not "the latest checkpoint" — that was a spike shortcut. Multiple notes can be
+    paused at once, so this matches on request_id specifically.
+    """
+    checkpoints = await checkpoint_storage(settings).list_checkpoints(workflow_name=WORKFLOW_NAME)
+    for ckpt in checkpoints:
+        if request_id in (ckpt.pending_request_info_events or {}):
+            return ckpt.checkpoint_id
+    raise RuntimeError(f"no checkpoint on disk holds request {request_id!r}")
+
+
+async def _interpret(result, note_id: int, settings: Settings) -> CaptureResult:
+    pending_events = result.get_request_info_events()
+    if pending_events:
+        # V1 has exactly one gate, so exactly one pending request per paused note.
+        event = pending_events[0]
+        checkpoint_id = await _find_checkpoint_for_request(settings, event.request_id)
+        return CaptureResult(
+            pending=PendingApproval(
+                note_id=note_id,
+                request_id=event.request_id,
+                checkpoint_id=checkpoint_id,
+                request=event.data,
+            )
+        )
+
+    outputs = result.get_outputs()
+    if not outputs:
+        raise RuntimeError(f"the brain produced nothing for note {note_id}")
+    return CaptureResult(completed=outputs[0])
+
+
+async def sweep_checkpoints(settings: Settings, keep_ids: set[str]) -> int:
+    """Delete every checkpoint for this workflow except the ones still needed.
+
+    Every workflow run writes a checkpoint per superstep, paused or not (see the known
+    limit recorded in Step 2). `keep_ids` should be the checkpoint_id of every currently
+    *pending* approval — anything else has already been consumed or was never needed.
+    Returns how many were deleted.
+    """
+    storage = checkpoint_storage(settings)
+    all_ids = await storage.list_checkpoint_ids(workflow_name=WORKFLOW_NAME)
+    deleted = 0
+    for checkpoint_id in all_ids:
+        if checkpoint_id not in keep_ids:
+            await storage.delete(checkpoint_id)
+            deleted += 1
+    return deleted
 
 
 async def run_capture(
@@ -126,12 +261,26 @@ async def run_capture(
     remember: RememberFn | None = None,
     brain: Brain | None = None,
     settings: Settings | None = None,
-) -> ClassifiedNote:
-    """Push one note through the brain and return what it decided."""
+) -> CaptureResult:
+    """Push one note through the brain. Either it completes, or it's now pending."""
+    settings = settings or get_settings()
     workflow = build_workflow(persist, remember=remember, brain=brain, settings=settings)
     result = await workflow.run(ClassifyRequest(note_id=note_id, text=text))
+    return await _interpret(result, note_id, settings)
 
-    outputs = result.get_outputs()
-    if not outputs:
-        raise RuntimeError(f"the brain produced nothing for note {note_id}")
-    return outputs[0]
+
+async def resume_capture(
+    approval: PendingApproval,
+    approved: bool,
+    persist: PersistFn,
+    remember: RememberFn | None = None,
+    brain: Brain | None = None,
+    settings: Settings | None = None,
+) -> CaptureResult:
+    """Resume a paused note with the human's answer. May run in a fresh process."""
+    settings = settings or get_settings()
+    workflow = build_workflow(persist, remember=remember, brain=brain, settings=settings)
+    result = await workflow.run(
+        responses={approval.request_id: approved}, checkpoint_id=approval.checkpoint_id
+    )
+    return await _interpret(result, approval.note_id, settings)

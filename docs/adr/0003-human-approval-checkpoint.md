@@ -52,6 +52,18 @@ uses its own row plus the workflow's `get_outputs()` instead. This also gives
   `FileCheckpointStorage(..., allowed_checkpoint_types=[...])`. A type defined in
   `__main__` cannot be resumed — verified: the checkpoint silently fails to load and
   `list_checkpoints()` returns an empty list with only a `logger.warning`.
+- **The allowlist reaches into nested fields, not just top-level message types.**
+  `NoteKind`, an enum used as a *field* inside `Classification`, needed its own entry —
+  the pickler stores it as its own type rather than folding it into its parent. A note
+  classified as a fact or task (no enum-adjacent surprises) paused and resumed fine in
+  testing; only once a risky note carrying `NoteKind.TASK` was captured did the missing
+  entry surface, as a silently-empty `list_checkpoints()` again.
+- **`from __future__ import annotations` breaks `@response_handler`.** With it enabled,
+  `ctx`'s annotation is a string at decoration time, `_is_workflow_context_type` returns
+  false, and registration raises `ValueError: ... got WorkflowContext[ApprovalOutcome]` —
+  the message even echoes back the correct-looking annotation, which makes it look like
+  a false alarm. Plain `@handler` methods tolerate this; only `@response_handler` does
+  not. `axon/brain/workflow.py` does not use the future import for this reason.
 - Approvals must be greppable. Every pause and every resume is recorded.
 
 ## Consequences

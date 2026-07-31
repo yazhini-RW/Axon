@@ -75,3 +75,55 @@ def test_init_db_is_safe_to_run_twice(settings: Settings) -> None:
         repo.init_db(conn)  # as happens on every command
         assert repo.count_notes(conn) == 1
         assert conn.execute("PRAGMA user_version").fetchone()[0] == repo.SCHEMA_VERSION
+
+
+# --- approvals -------------------------------------------------------------------------
+
+
+def test_a_new_approval_is_pending(conn: sqlite3.Connection) -> None:
+    note = repo.add_note(conn, "push the axon repo to github")
+    approval_id = repo.create_approval(conn, note.id, "req-1", "ckpt-1", "push")
+
+    approval = repo.get_approval(conn, approval_id)
+    assert approval.status == "pending"
+    assert approval.note_text == "push the axon repo to github"
+    assert approval.action == "push"
+
+
+def test_only_pending_approvals_are_listed(conn: sqlite3.Connection) -> None:
+    note = repo.add_note(conn, "push the axon repo to github")
+    approval_id = repo.create_approval(conn, note.id, "req-1", "ckpt-1", "push")
+
+    assert len(repo.list_pending_approvals(conn)) == 1
+
+    repo.resolve_approval(conn, approval_id, approved=True)
+
+    assert repo.list_pending_approvals(conn) == []
+
+
+def test_resolving_records_which_way_it_went(conn: sqlite3.Connection) -> None:
+    note = repo.add_note(conn, "buy milk at 5pm")
+    approved_id = repo.create_approval(conn, note.id, "req-1", "ckpt-1", "buy")
+    rejected_id = repo.create_approval(conn, note.id, "req-2", "ckpt-2", "buy")
+
+    repo.resolve_approval(conn, approved_id, approved=True)
+    repo.resolve_approval(conn, rejected_id, approved=False)
+
+    assert repo.get_approval(conn, approved_id).status == "approved"
+    assert repo.get_approval(conn, rejected_id).status == "rejected"
+
+
+def test_missing_approval_is_none(conn: sqlite3.Connection) -> None:
+    assert repo.get_approval(conn, 999) is None
+
+
+def test_approvals_survive_a_restart(settings: Settings) -> None:
+    """The whole point: an approval waiting on you must outlive the process."""
+    with repo.open_db(settings) as conn:
+        note = repo.add_note(conn, "push the axon repo to github")
+        approval_id = repo.create_approval(conn, note.id, "req-1", "ckpt-1", "push")
+
+    with repo.open_db(settings) as conn:
+        pending = repo.list_pending_approvals(conn)
+        assert len(pending) == 1
+        assert pending[0].id == approval_id

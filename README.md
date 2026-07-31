@@ -25,7 +25,7 @@ rule-based brain and local embeddings, fully offline.
 - [x] **Step 2** — the brain classifies each note
 - [x] **Step 3** — memory and meaning-based `axon recall`
 - [x] **Step 4** — scheduler and notifications (`axon run`)
-- [ ] Step 5 — the human approval pause (`axon approvals`, `axon approve`)
+- [x] **Step 5** — the human approval pause (`axon approvals`, `axon approve`, `axon reject`)
 - [ ] Step 6 — optional Gemini brain
 
 V2 adds the first real "hand": build code and push to GitHub, pausing for approval before

@@ -11,13 +11,14 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from axon.config import Settings, get_settings
 from axon.models import Note, NoteKind, NoteStatus, utcnow
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS notes (
@@ -30,6 +31,24 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 CREATE INDEX IF NOT EXISTS idx_notes_due_at ON notes(due_at);
 CREATE INDEX IF NOT EXISTS idx_notes_status ON notes(status);
+"""
+
+_SCHEMA_V2 = """
+-- Axon's own record of what's waiting on a human. Not derived from the workflow's
+-- state enum: after resuming, the framework still reports IDLE_WITH_PENDING_REQUESTS
+-- even once the response handler has produced its output, so it is not a reliable
+-- "is this finished" signal. See docs/adr/0003-human-approval-checkpoint.md.
+CREATE TABLE IF NOT EXISTS approvals (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id       INTEGER NOT NULL REFERENCES notes(id),
+    request_id    TEXT    NOT NULL,
+    checkpoint_id TEXT    NOT NULL,
+    action        TEXT    NOT NULL,
+    status        TEXT    NOT NULL DEFAULT 'pending',
+    created_at    TEXT    NOT NULL,
+    resolved_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
 """
 
 
@@ -72,6 +91,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version < 1:
         conn.executescript(_SCHEMA_V1)
+    if version < 2:
+        conn.executescript(_SCHEMA_V2)
     if version != SCHEMA_VERSION:
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -151,3 +172,73 @@ def list_notes(conn: sqlite3.Connection, limit: int = 20) -> list[Note]:
 
 def count_notes(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
+
+
+# --- approvals: Axon's own record of what's paused, waiting on a human -------------
+
+
+@dataclass
+class Approval:
+    id: int
+    note_id: int
+    request_id: str
+    checkpoint_id: str
+    action: str
+    status: str  # "pending" | "approved" | "rejected"
+    note_text: str = ""
+
+
+def create_approval(
+    conn: sqlite3.Connection, note_id: int, request_id: str, checkpoint_id: str, action: str
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO approvals (note_id, request_id, checkpoint_id, action, status, created_at) "
+        "VALUES (?,?,?,?, 'pending', ?)",
+        (note_id, request_id, checkpoint_id, action, _to_db(utcnow())),
+    )
+    return cur.lastrowid
+
+
+def get_approval(conn: sqlite3.Connection, approval_id: int) -> Approval | None:
+    row = conn.execute(
+        "SELECT a.*, n.text AS note_text FROM approvals a "
+        "JOIN notes n ON n.id = a.note_id WHERE a.id = ?",
+        (approval_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return Approval(
+        id=row["id"],
+        note_id=row["note_id"],
+        request_id=row["request_id"],
+        checkpoint_id=row["checkpoint_id"],
+        action=row["action"],
+        status=row["status"],
+        note_text=row["note_text"],
+    )
+
+
+def list_pending_approvals(conn: sqlite3.Connection) -> list[Approval]:
+    rows = conn.execute(
+        "SELECT a.*, n.text AS note_text FROM approvals a "
+        "JOIN notes n ON n.id = a.note_id WHERE a.status = 'pending' ORDER BY a.id"
+    ).fetchall()
+    return [
+        Approval(
+            id=r["id"],
+            note_id=r["note_id"],
+            request_id=r["request_id"],
+            checkpoint_id=r["checkpoint_id"],
+            action=r["action"],
+            status=r["status"],
+            note_text=r["note_text"],
+        )
+        for r in rows
+    ]
+
+
+def resolve_approval(conn: sqlite3.Connection, approval_id: int, *, approved: bool) -> None:
+    conn.execute(
+        "UPDATE approvals SET status = ?, resolved_at = ? WHERE id = ?",
+        ("approved" if approved else "rejected", _to_db(utcnow()), approval_id),
+    )

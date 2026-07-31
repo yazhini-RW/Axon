@@ -11,7 +11,7 @@ from rich.table import Table
 
 from axon.config import get_settings
 from axon.db import repo
-from axon.models import ClassifiedNote, Note, NoteKind, utcnow
+from axon.models import ApprovalOutcome, ClassifiedNote, Note, NoteKind, NoteStatus, utcnow
 
 def _use_utf8() -> None:
     """The Windows console defaults to cp1252, which turns an em-dash into a black
@@ -59,17 +59,17 @@ def add(text: str = typer.Argument(..., help="The note, in your own words.")) ->
 
         console.print(f"[green]captured[/green] #{note.id}  {note.text}")
 
-        def persist(result: ClassifiedNote) -> None:
+        def persist(outcome: ApprovalOutcome) -> None:
+            result = outcome.note
+            status = NoteStatus.CLASSIFIED if outcome.approved else NoteStatus.BLOCKED
             repo.apply_classification(
-                conn,
-                result.note_id,
-                result.classification.kind,
-                result.classification.due_at,
+                conn, result.note_id, result.classification.kind, result.classification.due_at,
+                status=status,
             )
 
         # Imported here, not at module level: `axon list` and `axon doctor` never
         # classify or remember anything and shouldn't wait for these.
-        from axon.brain.workflow import run_capture
+        from axon.brain.workflow import run_capture, sweep_checkpoints
         from axon.memory.store import MemoryLocked, MemoryStore
 
         try:
@@ -80,7 +80,7 @@ def add(text: str = typer.Argument(..., help="The note, in your own words.")) ->
                         result.text, note_id=result.note_id, kind=result.classification.kind.value
                     )
 
-                classified = asyncio.run(run_capture(note.id, note.text, persist, remember))
+                capture = asyncio.run(run_capture(note.id, note.text, persist, remember))
         except MemoryLocked as exc:
             console.print(f"[yellow]{exc}[/yellow]")
             raise typer.Exit(code=1) from exc
@@ -89,7 +89,35 @@ def add(text: str = typer.Argument(..., help="The note, in your own words.")) ->
             console.print("[dim]it's saved as unclassified — try `axon list`[/dim]")
             raise typer.Exit(code=1) from exc
 
-    verdict = classified.classification
+        if capture.pending:
+            pending = capture.pending
+            approval_id = repo.create_approval(
+                conn, pending.note_id, pending.request_id, pending.checkpoint_id,
+                pending.request.action,
+            )
+            # The brain already knows what this is (kind, due_at) — only *acting* on it
+            # is on hold. `axon list` should say "task", not "unclassified", while it
+            # waits. PersistExecutor never ran (that's the whole point of pausing), so
+            # nothing else writes this.
+            classification = pending.request.note.classification
+            repo.apply_classification(
+                conn, note.id, classification.kind, classification.due_at,
+                status=NoteStatus.AWAITING_APPROVAL,
+            )
+            keep = {a.checkpoint_id for a in repo.list_pending_approvals(conn)}
+            asyncio.run(sweep_checkpoints(get_settings(), keep))
+
+            console.print(
+                f"  -> [red]needs your OK[/red] to {pending.request.action}"
+                f" [dim](this is where Axon always stops and asks)[/dim]"
+            )
+            console.print(
+                f"     [bold]axon approve {approval_id}[/bold]"
+                f"  or  [bold]axon reject {approval_id}[/bold]"
+            )
+            return
+
+    verdict = capture.completed.note.classification
     style = _KIND_STYLE[verdict.kind]
     console.print(f"  -> [{style}]{verdict.kind.value}[/]  [dim]({verdict.reason})[/dim]")
 
@@ -103,8 +131,6 @@ def add(text: str = typer.Argument(..., help="The note, in your own words.")) ->
             )
     if verdict.recurring:
         console.print("  -> [yellow]repeats[/yellow] [dim](V1 fires once — recurrence comes later)[/dim]")
-    if verdict.risky:
-        console.print("  -> [red]risky[/red] [dim](will need your OK before Axon acts)[/dim]")
 
 
 @app.command("list")
@@ -197,6 +223,87 @@ def recall(
 
 
 @app.command()
+def approvals() -> None:
+    """Show what's waiting on your OK. See docs/adr/0003-human-approval-checkpoint.md."""
+    with repo.open_db() as conn:
+        pending = repo.list_pending_approvals(conn)
+
+    if not pending:
+        console.print("[dim]nothing waiting for approval[/dim]")
+        return
+
+    table = Table(box=None, pad_edge=False)
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("wants to")
+    table.add_column("note")
+
+    for approval in pending:
+        table.add_row(str(approval.id), f"[yellow]{approval.action}[/yellow]", approval.note_text)
+    console.print(table)
+    console.print("\n[dim]axon approve <#>  or  axon reject <#>[/dim]")
+
+
+def _resolve(approval_id: int, approved: bool) -> None:
+    """Shared by `approve` and `reject`: resume a paused workflow with the answer.
+
+    This can run in a completely different process than the one that paused it — the
+    whole point is that it does not need to. See ADR-0001 and ADR-0003.
+    """
+    from axon.brain.workflow import PendingApproval, resume_capture, sweep_checkpoints
+
+    with repo.open_db() as conn:
+        approval = repo.get_approval(conn, approval_id)
+        if approval is None:
+            console.print(f"[red]no approval #{approval_id}[/red]")
+            raise typer.Exit(code=1)
+        if approval.status != "pending":
+            console.print(
+                f"[yellow]approval #{approval_id} was already {approval.status}[/yellow]"
+            )
+            raise typer.Exit(code=1)
+
+        def persist(outcome: ApprovalOutcome) -> None:
+            result = outcome.note
+            status = NoteStatus.CLASSIFIED if outcome.approved else NoteStatus.BLOCKED
+            repo.apply_classification(
+                conn, result.note_id, result.classification.kind, result.classification.due_at,
+                status=status,
+            )
+
+        pending = PendingApproval(
+            note_id=approval.note_id,
+            request_id=approval.request_id,
+            checkpoint_id=approval.checkpoint_id,
+        )
+        with console.status("[dim]resuming...[/dim]"):
+            capture = asyncio.run(resume_capture(pending, approved, persist))
+
+        repo.resolve_approval(conn, approval_id, approved=approved)
+        keep = {a.checkpoint_id for a in repo.list_pending_approvals(conn)}
+        asyncio.run(sweep_checkpoints(get_settings(), keep))
+
+    verb = "approved" if approved else "rejected"
+    colour = "green" if approved else "yellow"
+    console.print(
+        f"[{colour}]{verb}[/{colour}] #{approval_id}: {approval.action} \"{approval.note_text}\""
+    )
+    if capture.pending:  # not reachable in V1 (one gate), guarded in case that changes
+        console.print("[yellow]this paused again — check `axon approvals`[/yellow]")
+
+
+@app.command()
+def approve(approval_id: int = typer.Argument(..., help="From `axon approvals`.")) -> None:
+    """Give the OK to a paused, risky action."""
+    _resolve(approval_id, approved=True)
+
+
+@app.command()
+def reject(approval_id: int = typer.Argument(..., help="From `axon approvals`.")) -> None:
+    """Say no. Axon will not do it."""
+    _resolve(approval_id, approved=False)
+
+
+@app.command()
 def run() -> None:
     """Start the scheduler and wait. Reminders fire as notifications."""
     from axon.scheduler.runner import SYNC_SECONDS, ReminderService
@@ -222,6 +329,7 @@ def doctor() -> None:
     settings = get_settings()
     with repo.open_db() as conn:
         total = repo.count_notes(conn)
+        pending = len(repo.list_pending_approvals(conn))
         version = conn.execute("PRAGMA user_version").fetchone()[0]
 
     brain = (
@@ -236,6 +344,8 @@ def doctor() -> None:
     table.add_row("data dir", str(settings.data_dir))
     table.add_row("database", f"{settings.db_path} [dim](schema v{version})[/dim]")
     table.add_row("notes stored", str(total))
+    if pending:
+        table.add_row("awaiting your OK", f"[yellow]{pending}[/yellow] — see `axon approvals`")
     # Deliberately not opened here: that would cost ~5s and take the storage lock.
     memory_state = (
         "ready" if settings.vector_dir.exists() else "[dim]not built yet (first `axon add`)[/dim]"

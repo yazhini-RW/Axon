@@ -83,3 +83,24 @@ class ClassifiedNote(BaseModel):
     note_id: int
     text: str
     classification: Classification
+
+
+class ApprovalRequest(BaseModel):
+    """What Axon is asking permission for.
+
+    Carries the full ClassifiedNote, not just an id, because the response handler that
+    reads this back is a separate invocation (possibly a different process, days later)
+    and cannot rely on any in-memory state to still be around. Carried inside a workflow
+    checkpoint, so it must stay in this module and be registered in
+    axon.brain.workflow.CHECKPOINT_TYPES. See ADR-0003.
+    """
+
+    note: ClassifiedNote
+    action: str
+
+
+class ApprovalOutcome(BaseModel):
+    """What happened once the human answered."""
+
+    note: ClassifiedNote
+    approved: bool

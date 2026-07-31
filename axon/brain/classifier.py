@@ -125,14 +125,14 @@ def extract_due(text: str) -> tuple[datetime | None, str | None]:
     return None, raw
 
 
-def _first_word(text: str) -> str:
+def first_word(text: str) -> str:
     match = re.search(r"[a-z']+", text.lower())
     return match.group(0) if match else ""
 
 
 def _looks_like_a_task(text: str) -> bool:
     lowered = text.lower()
-    return _first_word(text) in _ACTION_VERBS or any(p in lowered for p in _TASK_PHRASES)
+    return first_word(text) in _ACTION_VERBS or any(p in lowered for p in _TASK_PHRASES)
 
 
 def _is_risky(text: str) -> bool:
@@ -176,8 +176,8 @@ class MockBrain:
             return Classification(
                 kind=NoteKind.TASK,
                 risky=risky,
-                reason=f"starts with an action ({_first_word(text)!r})"
-                if _first_word(text) in _ACTION_VERBS
+                reason=f"starts with an action ({first_word(text)!r})"
+                if first_word(text) in _ACTION_VERBS
                 else "phrased as something to do",
             )
 

@@ -40,8 +40,9 @@ axon approve <id>         releases the paused step
 | `axon list` | show notes and reminders with their status |
 | `axon recall "<query>"` | meaning-based search over memory, ranked with scores |
 | `axon run` | start the scheduler; fires due reminders as notifications |
-| `axon approvals` | show pending approvals |
-| `axon approve <id>` / `axon reject <id>` | the human checkpoint |
+| `axon approvals` | show what's waiting on your OK |
+| `axon approve <id>` | give the OK to a paused, risky action |
+| `axon reject <id>` | say no — Axon will not do it |
 | `axon doctor` | print mode (mock vs Gemini), DB path, memory status |
 
 ---
@@ -108,10 +109,10 @@ V1 is done when all of these are true:
   the next occurrence is scheduled. Real recurrence is a later step, and Axon says so
   at capture time rather than silently promising weekly behaviour.
 - **Windows notifications are Windows-only.** Elsewhere Axon prints to console.
-- **Checkpoints are never cleaned up yet.** Every `axon add` writes one JSON file per
-  workflow superstep to `data/checkpoints/`, and nothing deletes them. Step 5 owns the
-  fix, because the retention rule depends on approvals: a checkpoint can only be deleted
-  once its run finished with no pending requests. Until then, disk use grows slowly.
+- **Checkpoint cleanup (fixed in Step 5).** Every workflow run still writes a checkpoint
+  per superstep, but after each `axon add` / `axon approve` / `axon reject`, everything
+  not referenced by a currently-pending approval is deleted. Verified: 0 files remain on
+  disk after both an approve and a reject.
 
 ## Deliberate exception for the `production-validator` agent
 

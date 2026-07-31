@@ -17,7 +17,8 @@ from axon.brain.workflow import (
 )
 from axon.config import Settings
 from axon.db import repo
-from axon.models import ApprovalOutcome, NoteKind, NoteStatus
+from axon.hands.noop import NoopHand
+from axon.models import ApprovalOutcome, ClassifiedNote, NoteKind, NoteStatus, PreparedNote
 
 
 def _persist_into(conn) -> tuple[callable, list[ApprovalOutcome]]:
@@ -194,6 +195,80 @@ async def test_a_pending_approvals_checkpoint_survives_the_sweep(settings: Setti
     # if the sweep had deleted it, this would raise "no checkpoint on disk holds request"
     resumed = await resume_capture(capture.pending, True, lambda _o: None, settings=settings)
     assert resumed.completed is not None
+
+
+# --- the Hand interface (Step 7) ------------------------------------------------------
+
+
+class _RecordingHand:
+    """A hand that notices whether prepare/execute actually ran, without doing anything."""
+
+    def __init__(self) -> None:
+        self.prepared: list[ClassifiedNote] = []
+        self.executed: list[ApprovalOutcome] = []
+
+    async def prepare(self, note: ClassifiedNote) -> PreparedNote:
+        self.prepared.append(note)
+        return PreparedNote(note=note, detail="recorded")
+
+    async def execute(self, outcome: ApprovalOutcome) -> None:
+        self.executed.append(outcome)
+
+
+async def test_noop_hand_leaves_the_non_risky_path_unchanged(settings: Settings) -> None:
+    """With the default NoopHand, V2's graph must behave exactly like V1's."""
+    capture = await run_capture(1, "review the PR this evening", lambda _o: None, settings=settings)
+
+    assert capture.completed is not None
+    assert capture.completed.approved is True
+    assert capture.completed.note.classification.kind is NoteKind.REMINDER
+
+
+async def test_prepare_always_runs_even_for_non_risky_notes(settings: Settings) -> None:
+    hand = _RecordingHand()
+    await run_capture(1, "fix the login bug", lambda _o: None, hand=hand, settings=settings)
+
+    assert len(hand.prepared) == 1
+    assert hand.prepared[0].text == "fix the login bug"
+
+
+async def test_execute_runs_on_the_non_risky_path_without_a_gate_pause(settings: Settings) -> None:
+    hand = _RecordingHand()
+    capture = await run_capture(1, "fix the login bug", lambda _o: None, hand=hand, settings=settings)
+
+    assert capture.completed is not None
+    assert len(hand.executed) == 1
+    assert hand.executed[0].approved is True
+
+
+async def test_execute_does_not_run_until_approval(settings: Settings) -> None:
+    hand = _RecordingHand()
+    capture = await run_capture(
+        1, "push the axon repo to github", lambda _o: None, hand=hand, settings=settings
+    )
+
+    assert capture.pending is not None
+    assert hand.prepared, "prepare is safe, must run before the gate"
+    assert not hand.executed, "execute is risky, must wait for approval"
+
+    await resume_capture(capture.pending, True, lambda _o: None, hand=hand, settings=settings)
+    assert len(hand.executed) == 1
+
+
+async def test_execute_does_not_run_on_rejection(settings: Settings) -> None:
+    hand = _RecordingHand()
+    capture = await run_capture(
+        1, "push the axon repo to github", lambda _o: None, hand=hand, settings=settings
+    )
+
+    await resume_capture(capture.pending, False, lambda _o: None, hand=hand, settings=settings)
+    assert not hand.executed, "a rejected note must never reach execute"
+
+
+async def test_default_hand_is_noop(settings: Settings) -> None:
+    """No hand passed in must fall back to NoopHand, not error."""
+    capture = await run_capture(1, "fix the login bug", lambda _o: None, settings=settings)
+    assert capture.completed is not None
 
 
 def test_checkpoint_types_are_fully_qualified_and_importable() -> None:

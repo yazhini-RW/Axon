@@ -102,6 +102,18 @@ class ClassifiedNote(BaseModel):
     classification: Classification
 
 
+class PreparedNote(BaseModel):
+    """What a Hand did in its safe `prepare` half, before anything risky happens.
+
+    Carried through the gate into `execute`, so it must stay in this module and be
+    registered in axon.brain.workflow.CHECKPOINT_TYPES, same as ApprovalRequest. See
+    ADR-0003 and docs/V2-PLAN.md Step 7.
+    """
+
+    note: ClassifiedNote
+    detail: str = ""  # e.g. "committed to ./projects/12-foo" — shown in `axon approvals`
+
+
 class ApprovalRequest(BaseModel):
     """What Axon is asking permission for.
 

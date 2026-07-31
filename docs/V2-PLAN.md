@@ -127,6 +127,12 @@ Also read [docs/SPEC.md](SPEC.md) — acceptance criteria and measured known lim
   duplicates in a pending list.
 - `dateparser` parses the bare words "we", "to" and "on" as valid dates. Never hand it
   raw text — a strict regex extracts genuine time expressions first.
+- `Executor` (the framework base class) already has a method named `execute`. Naming a
+  `@handler` method `execute` silently breaks message dispatch — the framework calls its
+  own `execute` with different arguments, and you get
+  `TypeError: got an unexpected keyword argument 'trace_contexts'` with a confusing
+  traceback pointing into `_edge_runner.py`, not your code. Found in Step 7's
+  `ExecuteExecutor`; the handler method is named `run_execute` instead.
 
 ---
 
@@ -172,7 +178,7 @@ push to a real GitHub repo. The paid part is turned on once, at the very end.
 
 | Step | What | Cost |
 |---|---|---|
-| **7** | Hand interface (`prepare` / `execute` split). Trivial no-op hand so nothing behaves differently yet and all 91 tests stay green. | free |
+| **7** ✅ | Hand interface (`prepare` / `execute` split). Trivial no-op hand so nothing behaves differently yet and all 91 tests stay green. | free |
 | **8** | GitHub hand — *prepare* half. Build + commit locally with the **mock builder**, then pause. No push. | free |
 | **9** | GitHub hand — *execute* half. Real `git push` on approval. Reject leaves the commit sitting locally. | free |
 | **10** | FastAPI backend exposing the same operations over HTTP. | free |

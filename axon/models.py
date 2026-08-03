@@ -141,7 +141,20 @@ class ApprovalRequest(BaseModel):
 
 
 class ApprovalOutcome(BaseModel):
-    """What happened once the human answered."""
+    """What happened once the human answered — or, for a non-risky note, what the
+    hand's prepare() produced, since the gate passes those straight through.
+
+    `detail` / `project_dir` / `push_url` mirror PreparedNote and ApprovalRequest
+    (Steps 8-9). Added in Step 16: without these, a hand whose entire deliverable IS
+    its prepare-time output — the research hand's answer text, with no side effect to
+    point to instead — had that output silently discarded for every non-risky note,
+    which for research is *every* note (a lookup query essentially never contains a
+    risky verb). Found by actually running `axon add "what is python"` and seeing the
+    real DuckDuckGo answer vanish instead of being shown.
+    """
 
     note: ClassifiedNote
     approved: bool
+    detail: str = ""
+    project_dir: str | None = None
+    push_url: str | None = None

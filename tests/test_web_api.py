@@ -25,6 +25,11 @@ from axon.config import get_settings
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("AXON_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("AXON_PROJECTS_DIR", str(tmp_path / "projects"))
+    # Added after a real leak: a files-hand test through this client wrote into the
+    # real project's ./documents (Step 16) because this fixture predates
+    # documents_dir (Step 15) and was never updated — the same class of mistake
+    # ADR-0002 warns about, just in a different fixture this time.
+    monkeypatch.setenv("AXON_DOCUMENTS_DIR", str(tmp_path / "documents"))
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GITHUB_USERNAME", raising=False)
     get_settings.cache_clear()
@@ -49,6 +54,20 @@ def test_add_a_non_risky_note_completes_immediately(client: TestClient) -> None:
     assert body["kind"] == "task"
     assert body["note"]["text"] == "fix the login bug"
     assert body["note"]["id"] == 1
+
+
+def test_a_completed_non_risky_note_still_shows_its_hand_detail(client: TestClient) -> None:
+    """Regression (Step 16): a hand's prepare()-time detail (e.g. the files hand's
+    "wrote <path>", or the research hand's actual answer) was silently dropped for
+    every non-risky note, since the completed path never carried it. Uses the files
+    hand here since it needs no network mocking - same underlying bug either way."""
+    resp = client.post("/api/notes", json={"text": "save my grocery list to groceries.txt"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "completed"
+    assert body["detail"]
+    assert "groceries.txt" in body["detail"]
 
 
 def test_add_an_empty_note_is_a_400(client: TestClient) -> None:

@@ -314,6 +314,9 @@ document.getElementById("add-form").addEventListener("submit", async (event) => 
       feedback.textContent = `captured #${result.note.id} — needs your OK to ${result.action}`;
     } else {
       feedback.textContent = `captured #${result.note.id} — ${result.kind}${result.reason ? ` (${result.reason})` : ""}`;
+      if (result.detail) {
+        feedback.textContent += ` — ${result.detail}`;
+      }
     }
     input.value = "";
     await Promise.all([refreshNotes(), refreshApprovals(), refreshDoctor()]);

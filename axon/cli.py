@@ -91,6 +91,9 @@ def add(text: str = typer.Argument(..., help="The note, in your own words.")) ->
     style = _KIND_STYLE[verdict.kind]
     console.print(f"  -> [{style}]{verdict.kind.value}[/]  [dim]({verdict.reason})[/dim]")
 
+    if result.completed.detail:
+        console.print(f"  -> {result.completed.detail}")
+
     if verdict.due_at:
         local = verdict.due_at.astimezone()
         console.print(f"  -> due [bold]{local.strftime('%a %d %b %Y at %H:%M')}[/bold]")

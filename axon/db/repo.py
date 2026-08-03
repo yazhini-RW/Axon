@@ -9,6 +9,7 @@ Times are stored as ISO 8601 strings in UTC and converted to local time only for
 from __future__ import annotations
 
 import sqlite3
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -88,10 +89,6 @@ def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, isolation_level=None)
     conn.row_factory = sqlite3.Row
-    # WAL lets the `axon run` daemon read while the CLI writes, instead of one
-    # blocking the other with "database is locked".
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
     # Step 10: FastAPI runs sync routes in a threadpool, so several requests can now
     # call open_db() concurrently in ways the single-process CLI never did — e.g. the
     # web UI firing GET /api/notes, /api/approvals and /api/doctor in parallel after an
@@ -99,7 +96,33 @@ def connect(db_path: Path) -> sqlite3.Connection:
     # locked" rather than wait; this makes a brief wait the default instead. Found by
     # actually running `axon serve` and driving the UI with a real browser, not by the
     # test suite, which never exercises requests running as concurrently as the UI does.
+    #
+    # Must be the FIRST pragma, before journal_mode below — found by a later flaky
+    # test failure (Step 16): several connections racing PRAGMA journal_mode=WAL
+    # itself, on a brand-new database that isn't in WAL mode yet, can still hit
+    # "database is locked" if busy_timeout hasn't taken effect yet. Setting WAL mode
+    # is itself a write that can contend for the lock, so busy_timeout has to be in
+    # place before that first pragma runs, not after it.
     conn.execute("PRAGMA busy_timeout=5000")
+    # WAL lets the `axon run` daemon read while the CLI writes, instead of one
+    # blocking the other with "database is locked".
+    #
+    # Switching journal_mode is itself a write to the database header, and reordering
+    # busy_timeout above turned out not to be a complete fix on its own: SQLite (tested
+    # against 3.45.1) can still occasionally return SQLITE_BUSY on this specific pragma
+    # under heavy concurrent first-access, not just wait out busy_timeout the way an
+    # ordinary read/write does. A short explicit retry closes the gap busy_timeout
+    # alone didn't. Confirmed by actually re-running the concurrency test dozens of
+    # times, not by reasoning about it — it was intermittent, not deterministic.
+    for attempt in range(5):
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            break
+        except sqlite3.OperationalError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 

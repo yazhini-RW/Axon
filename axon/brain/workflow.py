@@ -139,8 +139,16 @@ class GateExecutor(Executor):
     ) -> None:
         if not prepared.note.classification.risky:
             # Nothing to approve — pass straight through. `approved=True` here means
-            # "never needed approval", not "a human said yes".
-            await ctx.send_message(ApprovalOutcome(note=prepared.note, approved=True))
+            # "never needed approval", not "a human said yes". prepared.detail carries
+            # through too — for a hand like the research one, this IS the deliverable,
+            # not just a status note (see ApprovalOutcome's docstring).
+            await ctx.send_message(
+                ApprovalOutcome(
+                    note=prepared.note, approved=True,
+                    detail=prepared.detail, project_dir=prepared.project_dir,
+                    push_url=prepared.push_url,
+                )
+            )
             return
         await ctx.request_info(
             ApprovalRequest(
@@ -160,7 +168,13 @@ class GateExecutor(Executor):
         approved: bool,
         ctx: WorkflowContext[ApprovalOutcome],
     ) -> None:
-        await ctx.send_message(ApprovalOutcome(note=original_request.note, approved=approved))
+        await ctx.send_message(
+            ApprovalOutcome(
+                note=original_request.note, approved=approved,
+                detail=original_request.detail, project_dir=original_request.project_dir,
+                push_url=original_request.push_url,
+            )
+        )
 
 
 class ExecuteExecutor(Executor):

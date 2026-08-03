@@ -149,6 +149,31 @@ Also read [docs/SPEC.md](SPEC.md) — acceptance criteria and measured known lim
 - A live prompt injection got Gemini to agree its own note wasn't risky, and the
   `_RISKY_VERBS` keyword floor didn't catch it either ("wire" was missing). The floor
   is not a promise of completeness — expect to keep raising it. See ADR-0005.
+- `PRAGMA busy_timeout` alone did not fully close the concurrent-first-access SQLite
+  race above. `PRAGMA journal_mode=WAL` is itself a write to the database header, and
+  SQLite (3.45.1) can still occasionally return SQLITE_BUSY on that specific pragma
+  under heavy concurrent first access even with busy_timeout set — confirmed by
+  re-running the concurrency test dozens of times, not by reasoning about it, since
+  the failure was intermittent. Needed an explicit short retry around that one pragma
+  on top of busy_timeout, not instead of it.
+- `ApprovalOutcome` (the model carrying a note's final result out of the workflow)
+  never carried a hand's `detail` — only `PreparedNote` and `ApprovalRequest` did. For
+  most hands this didn't matter (the real deliverable was a side effect: a commit, a
+  sent email). For the research hand (Step 16), the `detail` *is* the deliverable, and
+  research notes are almost always non-risky, so the answer was silently discarded on
+  nearly every call. Found by actually running `axon add "what is python"` and
+  watching the real answer vanish. Fixed by adding `detail`/`project_dir`/`push_url`
+  to `ApprovalOutcome` too, threaded through both of `GateExecutor`'s exit paths.
+- Windows PowerShell's `$env:VAR=""` does not set an empty value — it removes the
+  variable entirely, so a later `load_dotenv()` still picks up the real value from
+  `.env` underneath. Use `Remove-Item Env:\VAR` to actually unset something.
+- A test fixture (`tests/test_web_api.py`'s `client`) predated `documents_dir` (Step 15
+  added the setting; the fixture was written in Step 10) and was never updated to
+  override it — so a files-hand test through that client silently wrote into the real
+  project's `./documents` instead of a temp directory, same class of mistake as the
+  Step 8 GitHub-hand finding. When adding a new `Settings` field that a hand writes
+  through, check every test fixture that constructs `Settings` or sets env vars for
+  a `TestClient`, not just the one in `conftest.py`.
 
 ---
 
@@ -254,7 +279,7 @@ new hand is just a new row in that table, routed by `axon.hands.pick_hand()`.
 | **13** ✅ | Email hand — draft (safe) + send via SMTP (risky, needs approval). | free |
 | **14** ✅ | Chat hand — draft (safe) + post to a Slack/Teams webhook (risky, needs approval). | free |
 | **15** ✅ | Files & docs hand — write a file (safe) / overwrite an existing one (risky). | free |
-| **16** | Research & summarise hand — read-only, no execute half; DuckDuckGo Instant Answer API. | free |
+| **16** ✅ | Research & summarise hand — read-only, no execute half; DuckDuckGo Instant Answer API. | free |
 
 n8n (self-hosted, free) was the original idea for "wiring the easy ones" — not used here,
 since each hand above is simple enough to build directly in Axon's own `Hand` interface

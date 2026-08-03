@@ -79,6 +79,7 @@ _ACTION_VERBS = _RISKY_VERBS | {
     "make", "schedule", "clean", "check", "finish", "read", "ask", "add",
     "prepare", "draft", "renew", "submit", "collect", "pick",
     "save",  # V3 Step 15 (files & docs hand): "save X to file.txt" is a task, not a fact
+    "research", "look", "find", "summarize", "summarise",  # V3 Step 16 (research hand)
 }
 
 _TASK_PHRASES = ("remind me", "need to", "have to", "must ", "todo", "to-do", "don't forget")

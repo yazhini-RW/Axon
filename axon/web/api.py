@@ -171,6 +171,7 @@ def add_note(body: AddNoteRequest) -> AddNoteResponse:
         reason=verdict.reason,
         due_at=verdict.due_at,
         recurring=verdict.recurring,
+        detail=result.completed.detail or None,
     )
 
 

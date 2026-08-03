@@ -273,6 +273,36 @@ async def test_default_hand_is_noop(settings: Settings) -> None:
     assert capture.completed is not None
 
 
+async def test_prepared_detail_survives_the_non_risky_pass_through(settings: Settings) -> None:
+    """Regression (Step 16): a hand whose entire deliverable IS its prepare()-time
+    detail — the research hand's answer text, with no side effect to point to instead
+    — had that detail silently dropped for every non-risky note, because
+    GateExecutor's straight-through path built an ApprovalOutcome with no detail
+    field at all. Found by actually running `axon add "what is python"` and watching
+    the real DuckDuckGo answer vanish instead of being shown."""
+    hand = _RecordingHand()
+    capture = await run_capture(
+        1, "fix the login bug", lambda _o: None, hand_resolver=lambda _t: hand, settings=settings
+    )
+
+    assert capture.completed is not None
+    assert capture.completed.detail == "recorded"
+
+
+async def test_prepared_detail_survives_resume_after_approval(settings: Settings) -> None:
+    """Same bug, the other path: GateExecutor.resumed() also built an ApprovalOutcome
+    with no detail, dropping it even for a note that paused and was explicitly
+    approved."""
+    hand = _RecordingHand()
+    capture = await run_capture(
+        1, "push the axon repo to github", lambda _o: None, hand_resolver=lambda _t: hand, settings=settings
+    )
+    resumed = await resume_capture(capture.pending, True, lambda _o: None, hand_resolver=lambda _t: hand, settings=settings)
+
+    assert resumed.completed is not None
+    assert resumed.completed.detail == "recorded"
+
+
 def test_checkpoint_types_are_fully_qualified_and_importable() -> None:
     """A type missing here fails silently at resume time, so assert the shape now.
 

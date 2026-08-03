@@ -63,6 +63,12 @@ _RISKY_VERBS = {
     "pay", "buy", "order", "purchase", "send", "email", "push",
     "deploy", "publish", "delete", "post", "book", "transfer",
     "wire", "venmo", "paypal", "zelle",
+    # V3 Step 14 (chat hand): "tell the team" / "message the team" / "notify the
+    # team" trigger a real Slack/Teams post but contained no word from this list
+    # before - the same class of gap the "wire" finding above exposed. Contacting
+    # someone is risky per the same definition GeminiBrain's system prompt already
+    # uses ("contacting someone" is risky), so this applies with or without Gemini on.
+    "tell", "message", "notify",
 }
 
 _ACTION_VERBS = _RISKY_VERBS | {

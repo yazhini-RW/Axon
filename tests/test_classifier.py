@@ -159,6 +159,17 @@ async def test_money_movement_verbs_are_flagged(brain: MockBrain, text: str) -> 
     assert (await brain.classify(text)).risky is True
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["tell the team standup moved to 10", "message the team about the outage", "notify the team the build is fixed"],
+)
+async def test_chat_send_verbs_are_flagged(brain: MockBrain, text: str) -> None:
+    """Regression: found while building the Step 14 chat hand - "tell the team",
+    "message the team" and "notify the team" all trigger a real Slack/Teams post but
+    contained no risky word before, the same class of gap as the "wire" finding above."""
+    assert (await brain.classify(text)).risky is True
+
+
 async def test_recurring_notes_are_flagged(brain: MockBrain) -> None:
     result = await brain.classify("email the weekly report every Friday")
     assert result.recurring is True

@@ -31,4 +31,4 @@ agent-framework-openai==1.11.0
 # --- Step 10: the web backend. Free, local, no separate build step for the UI ---
 fastapi==0.121.2
 uvicorn==0.38.0
-httpx==0.28.1          # test client for FastAPI's TestClient
+httpx==0.28.1          # FastAPI's TestClient, and (Step 14) posting to a chat webhook

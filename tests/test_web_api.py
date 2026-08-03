@@ -189,6 +189,65 @@ def test_healthz(client: TestClient) -> None:
     assert resp.json() == {"status": "ok"}
 
 
+# --- concurrency (Step 11 UI fires several requests at once) --------------------------
+
+
+def test_concurrent_reads_dont_hit_database_is_locked(client: TestClient) -> None:
+    """Regression: found by actually driving the Step 11 UI with a real browser, not
+    by this test suite. The page fires GET /api/notes, /api/approvals and /api/doctor
+    together after every add (Promise.all in index.html). FastAPI runs sync routes in a
+    threadpool, so these can genuinely overlap with a write still landing (the add
+    itself, or a background WAL checkpoint) — and SQLite's default is to fail
+    immediately with "database is locked" rather than wait. Fixed with
+    PRAGMA busy_timeout in axon/db/repo.py's connect().
+
+    Not covered by this test: concurrent *writes* to notes. Two overlapping
+    `POST /api/notes` calls both try to open memory (Qdrant) at once and correctly get
+    423 MemoryLocked from the other one - that's ADR-0002's single-process constraint
+    working as intended, not a bug, and not something the UI's add form can even
+    trigger (its button disables itself while a request is in flight)."""
+    import concurrent.futures
+
+    client.post("/api/notes", json={"text": "fix the login bug"})
+
+    def read(path: str) -> int:
+        return client.get(path).status_code
+
+    paths = ["/api/notes", "/api/approvals", "/api/doctor"] * 8
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(paths)) as pool:
+        statuses = list(pool.map(read, paths))
+
+    assert all(s == 200 for s in statuses), statuses
+
+
+def test_concurrent_first_requests_dont_race_the_schema_migration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: several concurrent requests against a brand-new database (schema
+    v0) can all read `version < 3` before any of them finishes migrating, and then all
+    try `ALTER TABLE approvals ADD COLUMN detail` — only the first succeeds, the rest
+    raised sqlite3.OperationalError: duplicate column name. Fixed in repo.init_db by
+    treating that specific error as "another connection already did this migration"."""
+    import concurrent.futures
+
+    monkeypatch.setenv("AXON_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("AXON_PROJECTS_DIR", str(tmp_path / "projects"))
+    get_settings.cache_clear()
+
+    from axon.web.api import app
+
+    with TestClient(app) as fresh_client:
+
+        def hit(_: int) -> int:
+            return fresh_client.get("/api/notes").status_code
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+            statuses = list(pool.map(hit, range(12)))
+
+    get_settings.cache_clear()
+    assert all(s == 200 for s in statuses), statuses
+
+
 # --- recall (loads the embedding model — slow) ----------------------------------------
 
 

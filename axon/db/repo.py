@@ -92,18 +92,37 @@ def connect(db_path: Path) -> sqlite3.Connection:
     # blocking the other with "database is locked".
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # Step 10: FastAPI runs sync routes in a threadpool, so several requests can now
+    # call open_db() concurrently in ways the single-process CLI never did — e.g. the
+    # web UI firing GET /api/notes, /api/approvals and /api/doctor in parallel after an
+    # add. SQLite's default busy behaviour is to fail immediately with "database is
+    # locked" rather than wait; this makes a brief wait the default instead. Found by
+    # actually running `axon serve` and driving the UI with a real browser, not by the
+    # test suite, which never exercises requests running as concurrently as the UI does.
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
 def init_db(conn: sqlite3.Connection) -> None:
-    """Create or migrate the schema. Safe to call on every run."""
+    """Create or migrate the schema. Safe to call on every run — including when several
+    connections race this on the very first request, which only Step 10's web server
+    can do (the single-process CLI never opens two connections at once)."""
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version < 1:
-        conn.executescript(_SCHEMA_V1)
+        conn.executescript(_SCHEMA_V1)  # CREATE TABLE IF NOT EXISTS: safe if raced
     if version < 2:
-        conn.executescript(_SCHEMA_V2)
+        conn.executescript(_SCHEMA_V2)  # same
     if version < 3:
-        conn.executescript(_SCHEMA_V3)
+        try:
+            conn.executescript(_SCHEMA_V3)
+        except sqlite3.OperationalError as exc:
+            # ALTER TABLE ADD COLUMN has no "IF NOT EXISTS" in SQLite, unlike V1/V2's
+            # CREATE TABLE. Two connections can both read version < 3 and both try
+            # this migration; the second one loses the race, not the data — the first
+            # connection's ALTER already added the column, so there's nothing left to
+            # do. Found by firing concurrent requests at a brand-new database.
+            if "duplicate column name" not in str(exc):
+                raise
     if version != SCHEMA_VERSION:
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 

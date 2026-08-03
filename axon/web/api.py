@@ -14,9 +14,11 @@ too, so one process serves both the API and the page.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from axon import service
@@ -26,6 +28,16 @@ app = FastAPI(
     title="Axon",
     description="A second brain that remembers your notes and acts on them.",
 )
+
+# Step 11: one plain HTML file, inline CSS/JS, no npm and no build step — it calls the
+# same /api/* routes below via fetch(). Served directly rather than mounted with
+# StaticFiles since there's exactly one file and no other assets.
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(_STATIC_DIR / "index.html")
 
 
 # --- response/request shapes ---------------------------------------------------------

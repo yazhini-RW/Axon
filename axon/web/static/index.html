@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Axon</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f3;
+    --panel: #ffffff;
+    --border: #e2e0db;
+    --text: #1c1b19;
+    --muted: #6b6862;
+    --accent: #2f6f4f;
+    --accent-text: #ffffff;
+    --danger: #b3432b;
+    --warn: #a4762a;
+    --fact: #2f6f9e;
+    --task: #a4762a;
+    --reminder: #7a4f9e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181a;
+      --panel: #1f2123;
+      --border: #33353a;
+      --text: #ecebe8;
+      --muted: #9a988f;
+      --accent: #4fa679;
+      --accent-text: #0b120e;
+      --danger: #d97a63;
+      --warn: #d8ab5f;
+      --fact: #7db3e0;
+      --task: #d8ab5f;
+      --reminder: #b592e0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+  }
+  h1 {
+    font-size: 1.4rem;
+    margin: 0 0 0.25rem;
+  }
+  .tagline {
+    color: var(--muted);
+    margin: 0;
+    font-size: 0.9rem;
+  }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+  }
+  section h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin: 0 0 0.8rem;
+  }
+  form { display: flex; gap: 0.5rem; }
+  input[type="text"] {
+    flex: 1;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  input[type="text"]:focus, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  button {
+    padding: 0.55rem 1rem;
+    border: none;
+    border-radius: 7px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.secondary {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--border);
+  }
+  .feedback {
+    margin-top: 0.75rem;
+    font-size: 0.88rem;
+    color: var(--muted);
+    min-height: 1.2em;
+  }
+  .feedback.error { color: var(--danger); }
+  .note-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--border);
+  }
+  .note-row:first-child { border-top: none; }
+  .note-id { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 1.6em; }
+  .note-text { flex: 1; }
+  .badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0.15em 0.5em;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  .badge.fact { color: var(--fact); background: color-mix(in srgb, var(--fact) 15%, transparent); }
+  .badge.task { color: var(--task); background: color-mix(in srgb, var(--task) 15%, transparent); }
+  .badge.reminder { color: var(--reminder); background: color-mix(in srgb, var(--reminder) 15%, transparent); }
+  .badge.unclassified { color: var(--muted); background: color-mix(in srgb, var(--muted) 15%, transparent); }
+  .note-status { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+  .empty { color: var(--muted); font-size: 0.9rem; }
+  .approval {
+    border-top: 1px solid var(--border);
+    padding: 0.7rem 0;
+  }
+  .approval:first-child { border-top: none; }
+  .approval-top { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
+  .approval-action { font-weight: 600; }
+  .approval-action .verb { color: var(--danger); text-transform: uppercase; font-size: 0.78rem; }
+  .approval-detail, .approval-command {
+    color: var(--muted);
+    font-size: 0.82rem;
+    margin-top: 0.2rem;
+    word-break: break-all;
+  }
+  .approval-command { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+  .approval-actions { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
+  .recall-hit { border-top: 1px solid var(--border); padding: 0.5rem 0; display: flex; gap: 0.6rem; }
+  .recall-hit:first-child { border-top: none; }
+  .recall-score { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.6em; }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-top: 1rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Axon</h1>
+    <p class="tagline">a second brain that remembers your notes and pauses before doing anything risky</p>
+  </div>
+
+  <section aria-labelledby="capture-heading">
+    <h2 id="capture-heading">Capture a note</h2>
+    <form id="add-form">
+      <input type="text" id="add-input" placeholder="e.g. push the repo to github" autocomplete="off" required>
+      <button type="submit" id="add-button">Add</button>
+    </form>
+    <p class="feedback" id="add-feedback"></p>
+  </section>
+
+  <section aria-labelledby="approvals-heading">
+    <h2 id="approvals-heading">Waiting on your OK</h2>
+    <div id="approvals-list"><p class="empty">nothing waiting for approval</p></div>
+  </section>
+
+  <section aria-labelledby="notes-heading">
+    <h2 id="notes-heading">Notes</h2>
+    <div id="notes-list"><p class="empty">nothing captured yet</p></div>
+  </section>
+
+  <section aria-labelledby="recall-heading">
+    <h2 id="recall-heading">Recall</h2>
+    <form id="recall-form">
+      <input type="text" id="recall-input" placeholder="what are you trying to remember?" autocomplete="off" required>
+      <button type="submit" id="recall-button">Search</button>
+    </form>
+    <div id="recall-results"></div>
+  </section>
+
+  <footer id="doctor-line"></footer>
+</main>
+
+<script>
+const KIND_LABEL = { unclassified: "unclassified", fact: "fact", task: "task", reminder: "reminder" };
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  let body = null;
+  try { body = await res.json(); } catch (_) { /* no body */ }
+  if (!res.ok) {
+    const detail = (body && body.detail) ? body.detail : `request failed (${res.status})`;
+    throw new Error(detail);
+  }
+  return body;
+}
+
+function formatDue(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// --- notes ---------------------------------------------------------------------
+
+async function refreshNotes() {
+  const data = await api("/api/notes?limit=20");
+  const el = document.getElementById("notes-list");
+  if (!data.notes.length) {
+    el.innerHTML = '<p class="empty">nothing captured yet</p>';
+    return;
+  }
+  el.innerHTML = data.notes.map(note => {
+    const due = formatDue(note.due_at);
+    return `
+      <div class="note-row">
+        <span class="note-id">#${note.id}</span>
+        <span class="note-text">${escapeHtml(note.text)}${due ? ` <span class="note-status">due ${escapeHtml(due)}</span>` : ""}</span>
+        <span class="badge ${escapeHtml(note.kind)}">${escapeHtml(KIND_LABEL[note.kind] ?? note.kind)}</span>
+        <span class="note-status">${escapeHtml(note.status)}</span>
+      </div>`;
+  }).join("");
+}
+
+// --- approvals -------------------------------------------------------------------
+
+async function refreshApprovals() {
+  const data = await api("/api/approvals");
+  const el = document.getElementById("approvals-list");
+  if (!data.approvals.length) {
+    el.innerHTML = '<p class="empty">nothing waiting for approval</p>';
+    return;
+  }
+  el.innerHTML = data.approvals.map(a => `
+    <div class="approval" data-id="${a.id}">
+      <div class="approval-top">
+        <span class="approval-action"><span class="verb">${escapeHtml(a.action)}</span> &nbsp;#${a.note_id} ${escapeHtml(a.note_text)}</span>
+      </div>
+      ${a.detail ? `<div class="approval-detail">${escapeHtml(a.detail)}</div>` : ""}
+      ${a.push_url ? `<div class="approval-command">will run: git push ${escapeHtml(a.push_url)}</div>` : ""}
+      <div class="approval-actions">
+        <button class="approve-btn" data-id="${a.id}">Approve</button>
+        <button class="secondary reject-btn" data-id="${a.id}">Reject</button>
+      </div>
+      <p class="feedback" id="approval-feedback-${a.id}"></p>
+    </div>`).join("");
+
+  el.querySelectorAll(".approve-btn").forEach(btn => btn.addEventListener("click", () => resolveApproval(btn.dataset.id, true)));
+  el.querySelectorAll(".reject-btn").forEach(btn => btn.addEventListener("click", () => resolveApproval(btn.dataset.id, false)));
+}
+
+async function resolveApproval(id, approved) {
+  const feedback = document.getElementById(`approval-feedback-${id}`);
+  const buttons = document.querySelectorAll(`.approval[data-id="${id}"] button`);
+  buttons.forEach(b => b.disabled = true);
+  if (feedback) { feedback.textContent = approved ? "approving..." : "rejecting..."; feedback.classList.remove("error"); }
+
+  try {
+    await api(`/api/approvals/${id}/${approved ? "approve" : "reject"}`, { method: "POST" });
+    await Promise.all([refreshApprovals(), refreshNotes()]);
+  } catch (err) {
+    if (feedback) { feedback.textContent = err.message; feedback.classList.add("error"); }
+    buttons.forEach(b => b.disabled = false);
+  }
+}
+
+// --- capture ---------------------------------------------------------------------
+
+document.getElementById("add-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = document.getElementById("add-input");
+  const button = document.getElementById("add-button");
+  const feedback = document.getElementById("add-feedback");
+  const text = input.value.trim();
+  if (!text) return;
+
+  button.disabled = true;
+  feedback.classList.remove("error");
+  feedback.textContent = "thinking...";
+
+  try {
+    const result = await api("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+
+    if (result.status === "pending") {
+      feedback.textContent = `captured #${result.note.id} — needs your OK to ${result.action}`;
+    } else {
+      feedback.textContent = `captured #${result.note.id} — ${result.kind}${result.reason ? ` (${result.reason})` : ""}`;
+    }
+    input.value = "";
+    await Promise.all([refreshNotes(), refreshApprovals(), refreshDoctor()]);
+  } catch (err) {
+    feedback.textContent = err.message;
+    feedback.classList.add("error");
+  } finally {
+    button.disabled = false;
+    input.focus();
+  }
+});
+
+// --- recall ------------------------------------------------------------------------
+
+document.getElementById("recall-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const input = document.getElementById("recall-input");
+  const button = document.getElementById("recall-button");
+  const results = document.getElementById("recall-results");
+  const query = input.value.trim();
+  if (!query) return;
+
+  button.disabled = true;
+  results.innerHTML = '<p class="feedback">remembering...</p>';
+
+  try {
+    const data = await api(`/api/recall?q=${encodeURIComponent(query)}&limit=5`);
+    if (!data.shown.length) {
+      results.innerHTML = data.nothing_related
+        ? '<p class="empty">nothing in memory looks related to that</p>'
+        : '<p class="empty">nothing in memory yet</p>';
+    } else {
+      results.innerHTML = data.shown.map(hit => `
+        <div class="recall-hit">
+          <span class="recall-score">${hit.score.toFixed(2)}</span>
+          <span>${hit.note_id ? `<span class="note-id">#${hit.note_id}</span> ` : ""}${escapeHtml(hit.text)}
+          ${hit.kind ? `<span class="badge ${escapeHtml(hit.kind)}">${escapeHtml(KIND_LABEL[hit.kind] ?? hit.kind)}</span>` : ""}</span>
+        </div>`).join("");
+      if (data.unsure) {
+        results.innerHTML += '<p class="feedback">these all look about equally similar — not confident which you meant</p>';
+      }
+    }
+  } catch (err) {
+    results.innerHTML = `<p class="feedback error">${escapeHtml(err.message)}</p>`;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+// --- footer / doctor ----------------------------------------------------------------
+
+async function refreshDoctor() {
+  try {
+    const info = await api("/api/doctor");
+    document.getElementById("doctor-line").textContent =
+      `${info.brain_mode} brain · ${info.notes_total} notes · nothing here requires a paid service`;
+  } catch (_) { /* footer is best-effort */ }
+}
+
+// --- init ----------------------------------------------------------------------------
+
+Promise.all([refreshNotes(), refreshApprovals(), refreshDoctor()]);
+</script>
+</body>
+</html>

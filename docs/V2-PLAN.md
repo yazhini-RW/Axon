@@ -133,6 +133,14 @@ Also read [docs/SPEC.md](SPEC.md) — acceptance criteria and measured known lim
   `TypeError: got an unexpected keyword argument 'trace_contexts'` with a confusing
   traceback pointing into `_edge_runner.py`, not your code. Found in Step 7's
   `ExecuteExecutor`; the handler method is named `run_execute` instead.
+- FastAPI runs sync routes in a threadpool, so requests can genuinely run concurrently
+  in ways the single-process CLI never did. Two traps that only showed up by actually
+  running `axon serve` and driving the UI in a real browser, never in the test suite:
+  SQLite's default is to fail immediately with "database is locked" instead of waiting
+  (fixed with `PRAGMA busy_timeout` in `repo.connect()`), and two connections racing
+  `init_db()` on a brand-new database can both try the same `ALTER TABLE ADD COLUMN`
+  migration, so the second one fails with "duplicate column name" (fixed by treating
+  that specific error as "someone else already migrated it").
 
 ---
 
@@ -182,7 +190,7 @@ push to a real GitHub repo. The paid part is turned on once, at the very end.
 | **8** ✅ | GitHub hand — *prepare* half. Build + commit locally with the **mock builder**, then pause. No push. | free |
 | **9** ✅ | GitHub hand — *execute* half. Real `git push` on approval. Reject leaves the commit sitting locally. | free |
 | **10** ✅ | FastAPI backend exposing the same operations over HTTP. | free |
-| **11** | The web UI — plain HTML served by FastAPI. No npm, no build step, works offline. | free |
+| **11** ✅ | The web UI — plain HTML served by FastAPI. No npm, no build step, works offline. | free |
 | **12** | **Only then:** enable the real Claude Code builder and test once. | costs a little |
 
 **Why hands before UI:** Step 7 changes the workflow shape. Building the UI first would

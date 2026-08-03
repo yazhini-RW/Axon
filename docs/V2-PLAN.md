@@ -181,7 +181,7 @@ push to a real GitHub repo. The paid part is turned on once, at the very end.
 | **7** ✅ | Hand interface (`prepare` / `execute` split). Trivial no-op hand so nothing behaves differently yet and all 91 tests stay green. | free |
 | **8** ✅ | GitHub hand — *prepare* half. Build + commit locally with the **mock builder**, then pause. No push. | free |
 | **9** ✅ | GitHub hand — *execute* half. Real `git push` on approval. Reject leaves the commit sitting locally. | free |
-| **10** | FastAPI backend exposing the same operations over HTTP. | free |
+| **10** ✅ | FastAPI backend exposing the same operations over HTTP. | free |
 | **11** | The web UI — plain HTML served by FastAPI. No npm, no build step, works offline. | free |
 | **12** | **Only then:** enable the real Claude Code builder and test once. | costs a little |
 

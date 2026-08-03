@@ -27,3 +27,8 @@ pytest-asyncio==1.4.0
 # --- Step 6: only used if GEMINI_API_KEY is set (no native Gemini connector exists;
 # Gemini's OpenAI-compatible endpoint is used instead — see ADR-0005) ---
 agent-framework-openai==1.11.0
+
+# --- Step 10: the web backend. Free, local, no separate build step for the UI ---
+fastapi==0.121.2
+uvicorn==0.38.0
+httpx==0.28.1          # test client for FastAPI's TestClient

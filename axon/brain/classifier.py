@@ -69,12 +69,16 @@ _RISKY_VERBS = {
     # someone is risky per the same definition GeminiBrain's system prompt already
     # uses ("contacting someone" is risky), so this applies with or without Gemini on.
     "tell", "message", "notify",
+    # V3 Step 15 (files & docs hand): overwriting or replacing an existing file is a
+    # real data-loss risk, same category as "delete" already above.
+    "overwrite", "replace",
 }
 
 _ACTION_VERBS = _RISKY_VERBS | {
     "build", "call", "write", "fix", "remind", "review", "update", "create",
     "make", "schedule", "clean", "check", "finish", "read", "ask", "add",
     "prepare", "draft", "renew", "submit", "collect", "pick",
+    "save",  # V3 Step 15 (files & docs hand): "save X to file.txt" is a task, not a fact
 }
 
 _TASK_PHRASES = ("remind me", "need to", "have to", "must ", "todo", "to-do", "don't forget")

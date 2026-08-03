@@ -253,7 +253,7 @@ new hand is just a new row in that table, routed by `axon.hands.pick_hand()`.
 |---|---|---|
 | **13** ✅ | Email hand — draft (safe) + send via SMTP (risky, needs approval). | free |
 | **14** ✅ | Chat hand — draft (safe) + post to a Slack/Teams webhook (risky, needs approval). | free |
-| **15** | Files & docs hand — write a file (safe) / overwrite an existing one (risky). | free |
+| **15** ✅ | Files & docs hand — write a file (safe) / overwrite an existing one (risky). | free |
 | **16** | Research & summarise hand — read-only, no execute half; DuckDuckGo Instant Answer API. | free |
 
 n8n (self-hosted, free) was the original idea for "wiring the easy ones" — not used here,

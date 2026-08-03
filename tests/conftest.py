@@ -17,6 +17,7 @@ def settings(tmp_path: Path) -> Settings:
         embed_model=DEFAULT_EMBED_MODEL,
         gemini_api_key=None,
         projects_dir=tmp_path / "projects",
+        documents_dir=tmp_path / "documents",
     )
 
 

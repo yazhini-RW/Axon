@@ -6,6 +6,7 @@ data/
 
 # real deliverables Axon builds for you — separate from Axon's own internal data
 projects/
+documents/
 
 # secrets
 .env

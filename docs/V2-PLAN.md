@@ -228,11 +228,37 @@ like the CLI does.
 
 ---
 
-## 6. Later (V3+)
+## 6. THE V3 PLAN (decided 2026-08-03)
 
-More hands, one at a time: email, Teams/Slack, WhatsApp/SMS, browser/shopping, files and
-docs, media creation, research and summarise, query data. Wire the easy ones through
-**n8n** (self-hosted, free). Phone calls and IoT much later.
+Same rule as V2: one hand at a time, mock/free first, real service only once the whole
+flow is proven. Same `prepare` (safe) / `execute` (risky) split from Section 5 — every
+new hand is just a new row in that table, routed by `axon.hands.pick_hand()`.
+
+### Scope decided for each V3 idea from the original wish-list
+
+| Idea | Decision | Why |
+|---|---|---|
+| **Email** | Build | Clean draft/send split. Free via a Gmail app password (SMTP). |
+| **Teams/Slack** | Build | Same draft/send split, one generic webhook-based hand covers both — Slack and Teams' classic incoming webhooks both accept a simple JSON body. |
+| **Files & docs** | Build | Fully local, no external account or key needed at all. |
+| **Research & summarise** | Build | Free via DuckDuckGo's no-key Instant Answer API. Genuinely limited — quick facts/definitions, not full web browsing — and that limit is stated plainly, not hidden, same as the mock brain and the recall confidence bands. |
+| **Query data** | Not building a new hand | Already covered by `axon recall` (V1) — searching your own notes by meaning is exactly this. Building a second thing to do the same job would just be re-inventing it. |
+| **Browser/shopping** | Skip | No concrete site to automate (the plan never named one), and "pay" is not something Axon should ever execute autonomously, even after approval, without far more deliberate design than a V3 stretch item deserves. Not a cost problem — a scope problem. |
+| **WhatsApp/SMS** | Skip (costs money) | No genuinely free way to send a real message — even Twilio's "free" trial needs phone verification and has real limits. Same tier as Claude Code (Step 12). |
+| **Media creation** | Skip (costs money) | No meaningful free/local generator exists at usable quality. Same tier as Claude Code (Step 12). |
+
+### Step order
+
+| Step | What | Cost |
+|---|---|---|
+| **13** | Email hand — draft (safe) + send via SMTP (risky, needs approval). | free |
+| **14** | Chat hand — draft (safe) + post to a Slack/Teams webhook (risky, needs approval). | free |
+| **15** | Files & docs hand — write a file (safe) / overwrite an existing one (risky). | free |
+| **16** | Research & summarise hand — read-only, no execute half; DuckDuckGo Instant Answer API. | free |
+
+n8n (self-hosted, free) was the original idea for "wiring the easy ones" — not used here,
+since each hand above is simple enough to build directly in Axon's own `Hand` interface
+without adding a whole second automation platform as a dependency.
 
 ---
 

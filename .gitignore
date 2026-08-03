@@ -8,6 +8,12 @@ data/
 projects/
 documents/
 
+# a separate, persistent sandbox for demos — never mixes with real notes.
+# demo/DEMO-SCRIPT.md itself stays tracked; only its data folders are ignored.
+demo/data/
+demo/projects/
+demo/documents/
+
 # secrets
 .env
 

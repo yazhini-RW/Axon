@@ -7,201 +7,399 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #f6f5f3;
+    --bg: #f5f4f1;
+    --bg-accent: #eef1ec;
     --panel: #ffffff;
-    --border: #e2e0db;
+    --border: #e4e1da;
     --text: #1c1b19;
     --muted: #6b6862;
     --accent: #2f6f4f;
+    --accent-strong: #245a3f;
     --accent-text: #ffffff;
+    --accent-soft: #e7f1ea;
     --danger: #b3432b;
+    --danger-soft: #fbeae5;
     --warn: #a4762a;
+    --warn-soft: #faf1e0;
     --fact: #2f6f9e;
     --task: #a4762a;
     --reminder: #7a4f9e;
+    --shadow: 0 1px 2px rgba(20, 20, 15, 0.04), 0 8px 24px -12px rgba(20, 20, 15, 0.12);
+    --shadow-sm: 0 1px 2px rgba(20, 20, 15, 0.06);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #17181a;
-      --panel: #1f2123;
+      --bg: #15161a;
+      --bg-accent: #1b1c20;
+      --panel: #1f2124;
       --border: #33353a;
       --text: #ecebe8;
       --muted: #9a988f;
       --accent: #4fa679;
+      --accent-strong: #6cc294;
       --accent-text: #0b120e;
-      --danger: #d97a63;
+      --accent-soft: rgba(79, 166, 121, 0.14);
+      --danger: #e08a71;
+      --danger-soft: rgba(224, 138, 113, 0.12);
       --warn: #d8ab5f;
+      --warn-soft: rgba(216, 171, 95, 0.12);
       --fact: #7db3e0;
       --task: #d8ab5f;
       --reminder: #b592e0;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 12px 28px -14px rgba(0, 0, 0, 0.5);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15161a; --bg-accent: #1b1c20; --panel: #1f2124; --border: #33353a;
+    --text: #ecebe8; --muted: #9a988f; --accent: #4fa679; --accent-strong: #6cc294;
+    --accent-text: #0b120e; --accent-soft: rgba(79, 166, 121, 0.14);
+    --danger: #e08a71; --danger-soft: rgba(224, 138, 113, 0.12);
+    --warn: #d8ab5f; --warn-soft: rgba(216, 171, 95, 0.12);
+    --fact: #7db3e0; --task: #d8ab5f; --reminder: #b592e0;
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f4f1; --bg-accent: #eef1ec; --panel: #ffffff; --border: #e4e1da;
+    --text: #1c1b19; --muted: #6b6862; --accent: #2f6f4f; --accent-strong: #245a3f;
+    --accent-text: #ffffff; --accent-soft: #e7f1ea;
+    --danger: #b3432b; --danger-soft: #fbeae5; --warn: #a4762a; --warn-soft: #faf1e0;
+    --fact: #2f6f9e; --task: #a4762a; --reminder: #7a4f9e;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    padding: 2rem 1rem 4rem;
-    background: var(--bg);
+    padding: 2.25rem 1rem 4rem;
+    background:
+      radial-gradient(1200px 480px at 50% -10%, var(--bg-accent), transparent 60%),
+      var(--bg);
     color: var(--text);
-    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font: 15px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
   main {
     max-width: 720px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 1.75rem;
+    gap: 1.5rem;
   }
+  header.top {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    margin-bottom: 0.25rem;
+  }
+  .logo-mark {
+    flex: none;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: linear-gradient(150deg, var(--accent) 0%, var(--accent-strong) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+  }
+  .logo-mark svg { width: 22px; height: 22px; }
   h1 {
-    font-size: 1.4rem;
-    margin: 0 0 0.25rem;
+    font-size: 1.55rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+    line-height: 1.1;
   }
   .tagline {
     color: var(--muted);
-    margin: 0;
-    font-size: 0.9rem;
+    margin: 0.15rem 0 0;
+    font-size: 0.88rem;
   }
   section {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 1.1rem 1.25rem;
+    border-radius: 14px;
+    padding: 1.25rem 1.35rem;
+    box-shadow: var(--shadow);
+    transition: border-color 0.2s ease;
+  }
+  section.attention {
+    border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+    background: linear-gradient(180deg, var(--warn-soft) 0%, var(--panel) 140px);
+  }
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.9rem;
   }
   section h2 {
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
     color: var(--muted);
-    margin: 0 0 0.8rem;
+    margin: 0;
+    font-weight: 700;
+  }
+  .count-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.3em;
+    height: 1.3em;
+    padding: 0 0.4em;
+    border-radius: 999px;
+    background: var(--warn);
+    color: #1a1206;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .pulse-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--warn);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 60%, transparent);
+    animation: pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 45%, transparent); }
+    70%  { box-shadow: 0 0 0 7px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
   }
   form { display: flex; gap: 0.5rem; }
   input[type="text"] {
     flex: 1;
-    padding: 0.55rem 0.7rem;
+    padding: 0.62rem 0.8rem;
     border: 1px solid var(--border);
-    border-radius: 7px;
+    border-radius: 9px;
     background: var(--bg);
     color: var(--text);
     font-size: 0.95rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
-  input[type="text"]:focus, button:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+  input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button {
-    padding: 0.55rem 1rem;
+    padding: 0.62rem 1.1rem;
     border: none;
-    border-radius: 7px;
+    border-radius: 9px;
     background: var(--accent);
     color: var(--accent-text);
     font-size: 0.9rem;
-    font-weight: 600;
+    font-weight: 650;
     cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
   }
-  button:disabled { opacity: 0.5; cursor: default; }
+  button:hover:not(:disabled) { background: var(--accent-strong); transform: translateY(-1px); }
+  button:active:not(:disabled) { transform: translateY(0); }
+  button:disabled { opacity: 0.6; cursor: default; transform: none; }
   button.secondary {
     background: transparent;
     color: var(--danger);
     border: 1px solid var(--border);
+    box-shadow: none;
   }
+  button.secondary:hover:not(:disabled) {
+    background: var(--danger-soft);
+    border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+    transform: translateY(-1px);
+  }
+  .spinner {
+    width: 0.9em; height: 0.9em;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: spin 0.65s linear infinite;
+    flex: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .feedback {
-    margin-top: 0.75rem;
-    font-size: 0.88rem;
+    margin-top: 0.8rem;
+    font-size: 0.86rem;
     color: var(--muted);
     min-height: 1.2em;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5em;
   }
+  .feedback:empty { margin-top: 0; }
+  .feedback.ok { color: var(--accent-strong); }
   .feedback.error { color: var(--danger); }
+  .feedback .icon { flex: none; margin-top: 0.15em; }
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .note-row, .approval, .recall-hit {
+    animation: fadeSlideIn 0.25s ease both;
+  }
   .note-row {
     display: flex;
     align-items: baseline;
-    gap: 0.6rem;
-    padding: 0.5rem 0;
+    gap: 0.65rem;
+    padding: 0.6rem 0.1rem;
     border-top: 1px solid var(--border);
   }
   .note-row:first-child { border-top: none; }
-  .note-id { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 1.6em; }
+  .note-id { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 1.8em; font-size: 0.85rem; }
   .note-text { flex: 1; }
   .badge {
-    font-size: 0.72rem;
-    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    font-size: 0.7rem;
+    font-weight: 750;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    padding: 0.15em 0.5em;
-    border-radius: 5px;
+    padding: 0.22em 0.6em;
+    border-radius: 999px;
     white-space: nowrap;
   }
-  .badge.fact { color: var(--fact); background: color-mix(in srgb, var(--fact) 15%, transparent); }
-  .badge.task { color: var(--task); background: color-mix(in srgb, var(--task) 15%, transparent); }
-  .badge.reminder { color: var(--reminder); background: color-mix(in srgb, var(--reminder) 15%, transparent); }
-  .badge.unclassified { color: var(--muted); background: color-mix(in srgb, var(--muted) 15%, transparent); }
-  .note-status { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
-  .empty { color: var(--muted); font-size: 0.9rem; }
+  .badge::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .badge.fact { color: var(--fact); background: color-mix(in srgb, var(--fact) 16%, transparent); }
+  .badge.task { color: var(--task); background: color-mix(in srgb, var(--task) 16%, transparent); }
+  .badge.reminder { color: var(--reminder); background: color-mix(in srgb, var(--reminder) 16%, transparent); }
+  .badge.unclassified { color: var(--muted); background: color-mix(in srgb, var(--muted) 16%, transparent); }
+  .note-status { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
+  .empty {
+    color: var(--muted);
+    font-size: 0.88rem;
+    display: flex;
+    align-items: center;
+    gap: 0.55em;
+    padding: 0.3rem 0.1rem;
+  }
+  .empty svg { flex: none; opacity: 0.6; }
   .approval {
     border-top: 1px solid var(--border);
-    padding: 0.7rem 0;
+    padding: 0.85rem 0.1rem;
   }
   .approval:first-child { border-top: none; }
   .approval-top { display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline; }
   .approval-action { font-weight: 600; }
-  .approval-action .verb { color: var(--danger); text-transform: uppercase; font-size: 0.78rem; }
+  .approval-action .verb {
+    color: var(--danger);
+    background: var(--danger-soft);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    padding: 0.18em 0.55em;
+    border-radius: 6px;
+    margin-right: 0.4em;
+  }
   .approval-detail, .approval-command {
     color: var(--muted);
     font-size: 0.82rem;
-    margin-top: 0.2rem;
+    margin-top: 0.35rem;
     word-break: break-all;
+    padding-left: 0.1rem;
   }
-  .approval-command { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
-  .approval-actions { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
-  .recall-hit { border-top: 1px solid var(--border); padding: 0.5rem 0; display: flex; gap: 0.6rem; }
+  .approval-command {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4em 0.6em;
+    margin-top: 0.5rem;
+  }
+  .approval-actions { display: flex; gap: 0.5rem; margin-top: 0.7rem; }
+  .recall-hit { border-top: 1px solid var(--border); padding: 0.55rem 0.1rem; display: flex; gap: 0.65rem; }
   .recall-hit:first-child { border-top: none; }
-  .recall-score { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.6em; }
+  .recall-score {
+    color: var(--accent-strong);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 0.82rem;
+    min-width: 2.6em;
+  }
   footer {
     text-align: center;
     color: var(--muted);
     font-size: 0.78rem;
-    margin-top: 1rem;
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+  }
+  footer .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+  }
+  @media (max-width: 480px) {
+    body { padding: 1.25rem 0.75rem 3rem; }
+    section { padding: 1rem; }
   }
 </style>
 </head>
 <body>
 <main>
-  <div>
-    <h1>Axon</h1>
-    <p class="tagline">a second brain that remembers your notes and pauses before doing anything risky</p>
-  </div>
+  <header class="top">
+    <div class="logo-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L4 6v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6l-8-4z" stroke="white" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M9 12.5l2 2 4-4.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Axon</h1>
+      <p class="tagline">a second brain that remembers your notes and pauses before doing anything risky</p>
+    </div>
+  </header>
 
   <section aria-labelledby="capture-heading">
-    <h2 id="capture-heading">Capture a note</h2>
+    <div class="section-head"><h2 id="capture-heading">Capture a note</h2></div>
     <form id="add-form">
       <input type="text" id="add-input" placeholder="e.g. push the repo to github" autocomplete="off" required>
-      <button type="submit" id="add-button">Add</button>
+      <button type="submit" id="add-button"><span class="btn-label">Add</span></button>
     </form>
     <p class="feedback" id="add-feedback"></p>
   </section>
 
-  <section aria-labelledby="approvals-heading">
-    <h2 id="approvals-heading">Waiting on your OK</h2>
+  <section id="approvals-section" aria-labelledby="approvals-heading">
+    <div class="section-head">
+      <h2 id="approvals-heading">Waiting on your OK</h2>
+      <span id="approvals-count" hidden></span>
+    </div>
     <div id="approvals-list"><p class="empty">nothing waiting for approval</p></div>
   </section>
 
   <section aria-labelledby="notes-heading">
-    <h2 id="notes-heading">Notes</h2>
+    <div class="section-head"><h2 id="notes-heading">Notes</h2></div>
     <div id="notes-list"><p class="empty">nothing captured yet</p></div>
   </section>
 
   <section aria-labelledby="recall-heading">
-    <h2 id="recall-heading">Recall</h2>
+    <div class="section-head"><h2 id="recall-heading">Recall</h2></div>
     <form id="recall-form">
       <input type="text" id="recall-input" placeholder="what are you trying to remember?" autocomplete="off" required>
-      <button type="submit" id="recall-button">Search</button>
+      <button type="submit" id="recall-button"><span class="btn-label">Search</span></button>
     </form>
     <div id="recall-results"></div>
   </section>
 
-  <footer id="doctor-line"></footer>
+  <footer><span class="status-dot" aria-hidden="true"></span><span id="doctor-line"></span></footer>
 </main>
 
 <script>
 const KIND_LABEL = { unclassified: "unclassified", fact: "fact", task: "task", reminder: "reminder" };
+
+const ICON_OK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="icon"><circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_ERROR = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="icon"><circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15"/><path d="M12 7v6M12 16.5v.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const ICON_EMPTY_TRAY = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 13l2.5-7h11L20 13M4 13v6a1 1 0 001 1h14a1 1 0 001-1v-6M4 13h5a1 1 0 011 1v1a2 2 0 004 0v-1a1 1 0 011-1h5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+const SPINNER = '<span class="spinner"></span>';
 
 function escapeHtml(str) {
   const div = document.createElement("div");
@@ -226,13 +424,25 @@ function formatDue(iso) {
   return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+function setButtonBusy(button, busy, busyLabel) {
+  const label = button.querySelector(".btn-label");
+  if (busy) {
+    button.dataset.originalLabel = label.textContent;
+    label.innerHTML = SPINNER + (busyLabel || "");
+    button.disabled = true;
+  } else {
+    label.textContent = button.dataset.originalLabel || label.textContent;
+    button.disabled = false;
+  }
+}
+
 // --- notes ---------------------------------------------------------------------
 
 async function refreshNotes() {
   const data = await api("/api/notes?limit=20");
   const el = document.getElementById("notes-list");
   if (!data.notes.length) {
-    el.innerHTML = '<p class="empty">nothing captured yet</p>';
+    el.innerHTML = `<p class="empty">${ICON_EMPTY_TRAY} nothing captured yet</p>`;
     return;
   }
   el.innerHTML = data.notes.map(note => {
@@ -252,20 +462,31 @@ async function refreshNotes() {
 async function refreshApprovals() {
   const data = await api("/api/approvals");
   const el = document.getElementById("approvals-list");
+  const section = document.getElementById("approvals-section");
+  const countEl = document.getElementById("approvals-count");
+
   if (!data.approvals.length) {
     el.innerHTML = '<p class="empty">nothing waiting for approval</p>';
+    section.classList.remove("attention");
+    countEl.hidden = true;
+    countEl.innerHTML = "";
     return;
   }
+
+  section.classList.add("attention");
+  countEl.hidden = false;
+  countEl.innerHTML = `<span class="pulse-dot" aria-hidden="true"></span> <span class="count-pill">${data.approvals.length}</span>`;
+
   el.innerHTML = data.approvals.map(a => `
     <div class="approval" data-id="${a.id}">
       <div class="approval-top">
-        <span class="approval-action"><span class="verb">${escapeHtml(a.action)}</span> &nbsp;#${a.note_id} ${escapeHtml(a.note_text)}</span>
+        <span class="approval-action"><span class="verb">${escapeHtml(a.action)}</span>#${a.note_id} ${escapeHtml(a.note_text)}</span>
       </div>
       ${a.detail ? `<div class="approval-detail">${escapeHtml(a.detail)}</div>` : ""}
       ${a.push_url ? `<div class="approval-command">will run: git push ${escapeHtml(a.push_url)}</div>` : ""}
       <div class="approval-actions">
-        <button class="approve-btn" data-id="${a.id}">Approve</button>
-        <button class="secondary reject-btn" data-id="${a.id}">Reject</button>
+        <button class="approve-btn" data-id="${a.id}"><span class="btn-label">Approve</span></button>
+        <button class="secondary reject-btn" data-id="${a.id}"><span class="btn-label">Reject</span></button>
       </div>
       <p class="feedback" id="approval-feedback-${a.id}"></p>
     </div>`).join("");
@@ -277,15 +498,18 @@ async function refreshApprovals() {
 async function resolveApproval(id, approved) {
   const feedback = document.getElementById(`approval-feedback-${id}`);
   const buttons = document.querySelectorAll(`.approval[data-id="${id}"] button`);
+  const activeBtn = document.querySelector(`.approval[data-id="${id}"] .${approved ? "approve" : "reject"}-btn`);
   buttons.forEach(b => b.disabled = true);
-  if (feedback) { feedback.textContent = approved ? "approving..." : "rejecting..."; feedback.classList.remove("error"); }
+  if (activeBtn) setButtonBusy(activeBtn, true, approved ? "Approving..." : "Rejecting...");
+  if (feedback) { feedback.innerHTML = ""; feedback.classList.remove("error", "ok"); }
 
   try {
     await api(`/api/approvals/${id}/${approved ? "approve" : "reject"}`, { method: "POST" });
-    await Promise.all([refreshApprovals(), refreshNotes()]);
+    await Promise.all([refreshApprovals(), refreshNotes(), refreshDoctor()]);
   } catch (err) {
-    if (feedback) { feedback.textContent = err.message; feedback.classList.add("error"); }
+    if (feedback) { feedback.innerHTML = `${ICON_ERROR}<span>${escapeHtml(err.message)}</span>`; feedback.classList.add("error"); }
     buttons.forEach(b => b.disabled = false);
+    if (activeBtn) setButtonBusy(activeBtn, false);
   }
 }
 
@@ -299,9 +523,9 @@ document.getElementById("add-form").addEventListener("submit", async (event) => 
   const text = input.value.trim();
   if (!text) return;
 
-  button.disabled = true;
-  feedback.classList.remove("error");
-  feedback.textContent = "thinking...";
+  setButtonBusy(button, true, "Thinking...");
+  feedback.classList.remove("error", "ok");
+  feedback.innerHTML = `${SPINNER}<span>thinking...</span>`;
 
   try {
     const result = await api("/api/notes", {
@@ -310,21 +534,24 @@ document.getElementById("add-form").addEventListener("submit", async (event) => 
       body: JSON.stringify({ text }),
     });
 
+    let message;
     if (result.status === "pending") {
-      feedback.textContent = `captured #${result.note.id} — needs your OK to ${result.action}`;
+      message = `captured #${result.note.id} — needs your OK to ${escapeHtml(result.action)}`;
     } else {
-      feedback.textContent = `captured #${result.note.id} — ${result.kind}${result.reason ? ` (${result.reason})` : ""}`;
-      if (result.detail) {
-        feedback.textContent += ` — ${result.detail}`;
-      }
+      const reasonPart = result.reason ? ` (${escapeHtml(result.reason)})` : "";
+      message = `captured #${result.note.id} — ${escapeHtml(result.kind)}${reasonPart}`;
+      if (result.detail) message += ` — ${escapeHtml(result.detail)}`;
     }
+    feedback.innerHTML = `${ICON_OK}<span>${message}</span>`;
+    feedback.classList.add("ok");
+
     input.value = "";
     await Promise.all([refreshNotes(), refreshApprovals(), refreshDoctor()]);
   } catch (err) {
-    feedback.textContent = err.message;
+    feedback.innerHTML = `${ICON_ERROR}<span>${escapeHtml(err.message)}</span>`;
     feedback.classList.add("error");
   } finally {
-    button.disabled = false;
+    setButtonBusy(button, false);
     input.focus();
   }
 });
@@ -339,8 +566,8 @@ document.getElementById("recall-form").addEventListener("submit", async (event) 
   const query = input.value.trim();
   if (!query) return;
 
-  button.disabled = true;
-  results.innerHTML = '<p class="feedback">remembering...</p>';
+  setButtonBusy(button, true, "Searching...");
+  results.innerHTML = `<p class="feedback">${SPINNER}<span>remembering...</span></p>`;
 
   try {
     const data = await api(`/api/recall?q=${encodeURIComponent(query)}&limit=5`);
@@ -360,9 +587,9 @@ document.getElementById("recall-form").addEventListener("submit", async (event) 
       }
     }
   } catch (err) {
-    results.innerHTML = `<p class="feedback error">${escapeHtml(err.message)}</p>`;
+    results.innerHTML = `<p class="feedback error">${ICON_ERROR}<span>${escapeHtml(err.message)}</span></p>`;
   } finally {
-    button.disabled = false;
+    setButtonBusy(button, false);
   }
 });
 

@@ -108,7 +108,7 @@ drift, and several record traps found the hard way.
 | [0002](adr/0002-free-local-only-stack.md) | Free/local only. **Local Qdrant allows ONE process at a time** — memory must be opened per-command and closed. The `axon run` daemon must never touch it. |
 | [0003](adr/0003-human-approval-checkpoint.md) | Risky actions always pause. Checkpoint types must be allowlisted by `module:qualname` and never live in `__main__`. |
 | [0004](adr/0004-scheduler-design.md) | SQLite is the source of truth for reminders, not APScheduler's job store. |
-| [0005](adr/0005-gemini-brain.md) | Gemini via OpenAI-compatible endpoint. **Untested against a real key.** |
+| [0005](adr/0005-gemini-brain.md) | Gemini via OpenAI-compatible endpoint. **Now tested against a real key (2026-08-03)** — two bugs and a safety gap found, see "What real testing found" in the ADR. |
 
 Also read [docs/SPEC.md](SPEC.md) — acceptance criteria and measured known limits.
 
@@ -141,6 +141,14 @@ Also read [docs/SPEC.md](SPEC.md) — acceptance criteria and measured known lim
   `init_db()` on a brand-new database can both try the same `ALTER TABLE ADD COLUMN`
   migration, so the second one fails with "duplicate column name" (fixed by treating
   that specific error as "someone else already migrated it").
+- `agent_framework.openai.OpenAIChatClient` targets OpenAI's newer Responses API
+  (`.../responses`), which Gemini's OpenAI-compatible endpoint 404s on — it only
+  implements the classic Chat Completions API. Use `OpenAIChatCompletionClient` instead
+  (same constructor, same `get_response()`). Found by curling both paths directly
+  against a real key, not by reading either SDK's docs. See ADR-0005.
+- A live prompt injection got Gemini to agree its own note wasn't risky, and the
+  `_RISKY_VERBS` keyword floor didn't catch it either ("wire" was missing). The floor
+  is not a promise of completeness — expect to keep raising it. See ADR-0005.
 
 ---
 

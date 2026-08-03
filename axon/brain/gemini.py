@@ -13,7 +13,7 @@ no key never imports agent_framework.openai at all.
 from __future__ import annotations
 
 from agent_framework import ChatOptions, Message
-from agent_framework.openai import OpenAIChatClient
+from agent_framework.openai import OpenAIChatCompletionClient
 
 from axon.brain.classifier import extract_due, is_risky
 from axon.models import Classification, GeminiVerdict, NoteKind
@@ -21,9 +21,12 @@ from axon.models import Classification, GeminiVerdict, NoteKind
 # Gemini's OpenAI-compatible endpoint. Not a guess: Google documents this exact path.
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
-# Free-tier model as of writing. Overridable so a key holder isn't stuck if Google
-# renames or retires it.
-DEFAULT_MODEL = "gemini-2.0-flash"
+# Free-tier model as of writing (2026-08-03). Overridable so a key holder isn't stuck
+# if Google renames or retires it — which already happened once: gemini-2.0-flash
+# (the original default) now returns 429 "quota exceeded, limit: 0" on a real free-tier
+# key, and gemini-1.5-flash 404s outright. See ADR-0005's "Limits" section for how this
+# was actually confirmed against the real API, not assumed from docs.
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 _SYSTEM_PROMPT = """You sort personal notes for a "second brain" app. For the note, decide:
 
@@ -47,7 +50,16 @@ class GeminiBrain:
     name = "gemini"
 
     def __init__(self, api_key: str, model: str = DEFAULT_MODEL) -> None:
-        self._client = OpenAIChatClient(model=model, api_key=api_key, base_url=GEMINI_BASE_URL)
+        # OpenAIChatClient (the framework's default) targets OpenAI's newer Responses
+        # API (POST .../responses) — Gemini's OpenAI-compatible layer only implements
+        # the classic Chat Completions API (POST .../chat/completions) and 404s on
+        # Responses-API calls. OpenAIChatCompletionClient targets the classic endpoint
+        # instead; same constructor shape, same get_response() interface. Confirmed
+        # against the real API, not assumed: curl against .../responses returned 404
+        # with a valid key and a model that worked fine on .../chat/completions.
+        self._client = OpenAIChatCompletionClient(
+            model=model, api_key=api_key, base_url=GEMINI_BASE_URL
+        )
 
     async def classify(self, text: str) -> Classification:
         # Message(role, contents) treats a bare str as an iterable of characters, not

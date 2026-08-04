@@ -1,0 +1,29 @@
+# Render blueprint for Axon's web UI + API (axon serve).
+#
+# Free tier trade-offs (Render, 2026 pricing):
+# - Sleeps after ~15 min idle; next request takes ~30-50s to wake up.
+# - Persistent disks are NOT free ($0.25/GB/month) — a free web service gets an
+#   EPHEMERAL filesystem only, wiped on every restart/sleep/redeploy. That means
+#   notes/approvals captured on the deployed instance do NOT survive a restart.
+#   This is fine for demoing the UI and workflow live, but don't rely on it to
+#   keep real notes — use the local app (axon serve on your own machine) for that.
+# - The reminder daemon (axon run) is NOT covered here — free tier runs one
+#   process per service, and a sleeping service can't fire scheduled reminders.
+#   Keep running that locally via demo-run.ps1.
+#
+# Secrets (GEMINI_API_KEY, GITHUB_USERNAME, EMAIL_ADDRESS, EMAIL_APP_PASSWORD,
+# CHAT_WEBHOOK_URL) are set in the Render dashboard, never committed here.
+
+services:
+  - type: web
+    name: axon
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn axon.web.api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: AXON_DATA_DIR
+        value: /tmp/axon-data
+      - key: PYTHON_VERSION
+        value: 3.11.9

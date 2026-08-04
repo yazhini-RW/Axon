@@ -68,7 +68,7 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    padding: 2.25rem 1rem 4rem;
+    padding: 2rem 1.5rem 4rem;
     background:
       radial-gradient(1200px 480px at 50% -10%, var(--bg-accent), transparent 60%),
       var(--bg);
@@ -77,33 +77,33 @@
     -webkit-font-smoothing: antialiased;
   }
   main {
-    max-width: 720px;
+    max-width: 1180px;
     margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
   }
   header.top {
     display: flex;
     align-items: center;
-    gap: 0.85rem;
-    margin-bottom: 0.25rem;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+    flex-wrap: wrap;
   }
+  .brand { display: flex; align-items: center; gap: 0.85rem; }
   .logo-mark {
     flex: none;
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
+    width: 46px;
+    height: 46px;
+    border-radius: 13px;
     background: linear-gradient(150deg, var(--accent) 0%, var(--accent-strong) 100%);
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow);
   }
-  .logo-mark svg { width: 22px; height: 22px; }
+  .logo-mark svg { width: 24px; height: 24px; }
   h1 {
-    font-size: 1.55rem;
-    font-weight: 700;
+    font-size: 1.6rem;
+    font-weight: 750;
     letter-spacing: -0.01em;
     margin: 0;
     line-height: 1.1;
@@ -111,34 +111,109 @@
   .tagline {
     color: var(--muted);
     margin: 0.15rem 0 0;
-    font-size: 0.88rem;
+    font-size: 0.86rem;
+  }
+  .stat-strip {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .stat-chip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    padding: 0.5rem 0.9rem;
+    box-shadow: var(--shadow-sm);
+    min-width: 84px;
+  }
+  .stat-chip .stat-value {
+    font-size: 1.05rem;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .stat-chip .stat-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    font-weight: 650;
+  }
+  .dashboard {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .main-col, .side-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    min-width: 0;
+  }
+  .side-col {
+    position: sticky;
+    top: 1.5rem;
+  }
+  @media (max-width: 900px) {
+    .dashboard { grid-template-columns: 1fr; }
+    .side-col { position: static; }
   }
   section {
     background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 1.25rem 1.35rem;
+    border-radius: 16px;
+    padding: 1.35rem 1.45rem;
     box-shadow: var(--shadow);
     transition: border-color 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  section::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), transparent 70%);
+    opacity: 0.7;
   }
   section.attention {
     border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
     background: linear-gradient(180deg, var(--warn-soft) 0%, var(--panel) 140px);
   }
+  section.attention::before {
+    background: linear-gradient(90deg, var(--warn), transparent 70%);
+  }
   .section-head {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 0.5rem;
-    margin: 0 0 0.9rem;
+    margin: 0 0 1rem;
   }
+  .section-head-left { display: flex; align-items: center; gap: 0.5rem; }
   section h2 {
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     color: var(--muted);
     margin: 0;
-    font-weight: 700;
+    font-weight: 750;
   }
+  .section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px; height: 26px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    flex: none;
+  }
+  .section-icon svg { width: 15px; height: 15px; }
   .count-pill {
     display: inline-flex;
     align-items: center;
@@ -347,48 +422,75 @@
 <body>
 <main>
   <header class="top">
-    <div class="logo-mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L4 6v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6l-8-4z" stroke="white" stroke-width="1.6" stroke-linejoin="round"/>
-        <path d="M9 12.5l2 2 4-4.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+    <div class="brand">
+      <div class="logo-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L4 6v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6l-8-4z" stroke="white" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M9 12.5l2 2 4-4.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <h1>Axon</h1>
+        <p class="tagline">a second brain that remembers your notes and pauses before doing anything risky</p>
+      </div>
     </div>
-    <div>
-      <h1>Axon</h1>
-      <p class="tagline">a second brain that remembers your notes and pauses before doing anything risky</p>
-    </div>
+    <div class="stat-strip" id="stat-strip"></div>
   </header>
 
-  <section aria-labelledby="capture-heading">
-    <div class="section-head"><h2 id="capture-heading">Capture a note</h2></div>
-    <form id="add-form">
-      <input type="text" id="add-input" placeholder="e.g. push the repo to github" autocomplete="off" required>
-      <button type="submit" id="add-button"><span class="btn-label">Add</span></button>
-    </form>
-    <p class="feedback" id="add-feedback"></p>
-  </section>
+  <div class="dashboard">
+    <div class="main-col">
+      <section aria-labelledby="capture-heading">
+        <div class="section-head">
+          <div class="section-head-left">
+            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+            <h2 id="capture-heading">Capture a note</h2>
+          </div>
+        </div>
+        <form id="add-form">
+          <input type="text" id="add-input" placeholder="e.g. push the repo to github" autocomplete="off" required>
+          <button type="submit" id="add-button"><span class="btn-label">Add</span></button>
+        </form>
+        <p class="feedback" id="add-feedback"></p>
+      </section>
 
-  <section id="approvals-section" aria-labelledby="approvals-heading">
-    <div class="section-head">
-      <h2 id="approvals-heading">Waiting on your OK</h2>
-      <span id="approvals-count" hidden></span>
+      <section aria-labelledby="notes-heading">
+        <div class="section-head">
+          <div class="section-head-left">
+            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 4h9l3 3v13H6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 10h6M9 14h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+            <h2 id="notes-heading">Notes</h2>
+          </div>
+        </div>
+        <div id="notes-list"><p class="empty">nothing captured yet</p></div>
+      </section>
     </div>
-    <div id="approvals-list"><p class="empty">nothing waiting for approval</p></div>
-  </section>
 
-  <section aria-labelledby="notes-heading">
-    <div class="section-head"><h2 id="notes-heading">Notes</h2></div>
-    <div id="notes-list"><p class="empty">nothing captured yet</p></div>
-  </section>
+    <div class="side-col">
+      <section id="approvals-section" aria-labelledby="approvals-heading">
+        <div class="section-head">
+          <div class="section-head-left">
+            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/></svg></span>
+            <h2 id="approvals-heading">Waiting on your OK</h2>
+          </div>
+          <span id="approvals-count" hidden></span>
+        </div>
+        <div id="approvals-list"><p class="empty">nothing waiting for approval</p></div>
+      </section>
 
-  <section aria-labelledby="recall-heading">
-    <div class="section-head"><h2 id="recall-heading">Recall</h2></div>
-    <form id="recall-form">
-      <input type="text" id="recall-input" placeholder="what are you trying to remember?" autocomplete="off" required>
-      <button type="submit" id="recall-button"><span class="btn-label">Search</span></button>
-    </form>
-    <div id="recall-results"></div>
-  </section>
+      <section aria-labelledby="recall-heading">
+        <div class="section-head">
+          <div class="section-head-left">
+            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.6"/><path d="M20 20l-4.3-4.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+            <h2 id="recall-heading">Recall</h2>
+          </div>
+        </div>
+        <form id="recall-form">
+          <input type="text" id="recall-input" placeholder="what are you trying to remember?" autocomplete="off" required>
+          <button type="submit" id="recall-button"><span class="btn-label">Search</span></button>
+        </form>
+        <div id="recall-results"></div>
+      </section>
+    </div>
+  </div>
 
   <footer><span class="status-dot" aria-hidden="true"></span><span id="doctor-line"></span></footer>
 </main>
@@ -441,6 +543,7 @@ function setButtonBusy(button, busy, busyLabel) {
 async function refreshNotes() {
   const data = await api("/api/notes?limit=20");
   const el = document.getElementById("notes-list");
+  updateStatChip("notes", data.notes.length);
   if (!data.notes.length) {
     el.innerHTML = `<p class="empty">${ICON_EMPTY_TRAY} nothing captured yet</p>`;
     return;
@@ -464,6 +567,8 @@ async function refreshApprovals() {
   const el = document.getElementById("approvals-list");
   const section = document.getElementById("approvals-section");
   const countEl = document.getElementById("approvals-count");
+
+  updateStatChip("approvals", data.approvals.length);
 
   if (!data.approvals.length) {
     el.innerHTML = '<p class="empty">nothing waiting for approval</p>';
@@ -600,7 +705,24 @@ async function refreshDoctor() {
     const info = await api("/api/doctor");
     document.getElementById("doctor-line").textContent =
       `${info.brain_mode} brain · ${info.notes_total} notes · nothing here requires a paid service`;
+    updateStatChip("brain", info.brain_mode);
   } catch (_) { /* footer is best-effort */ }
+}
+
+// --- header stat strip -----------------------------------------------------------------
+
+const STAT_ORDER = ["notes", "approvals", "brain"];
+const STAT_LABEL = { notes: "notes", approvals: "pending", brain: "brain" };
+const statState = {};
+
+function updateStatChip(key, value) {
+  statState[key] = value;
+  const el = document.getElementById("stat-strip");
+  el.innerHTML = STAT_ORDER.filter(k => statState[k] !== undefined).map(k => `
+    <div class="stat-chip">
+      <span class="stat-value">${escapeHtml(String(statState[k]))}</span>
+      <span class="stat-label">${escapeHtml(STAT_LABEL[k])}</span>
+    </div>`).join("");
 }
 
 // --- init ----------------------------------------------------------------------------

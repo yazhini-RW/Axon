@@ -17,7 +17,7 @@ dateparser==1.4.1      # turns "in 5 days" / "at 5pm" into a real datetime
 
 # --- interface + plumbing ---
 typer==0.27.0          # the `axon` CLI
-win11toast==0.36.3     # real Windows notifications (Windows-only, degrades to console)
+win11toast==0.36.3; sys_platform == "win32"  # real Windows notifications, degrades to console elsewhere
 python-dotenv==1.2.2   # reads .env
 
 # --- tests ---

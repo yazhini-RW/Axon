@@ -19,7 +19,7 @@ from pathlib import Path
 
 from axon.brain.classifier import first_word
 from axon.config import Settings, get_settings
-from axon.hands.builders.base import Builder
+from axon.hands.builders.base import Builder, get_builder
 from axon.hands.builders.mock import MockBuilder
 from axon.models import ApprovalOutcome, ClassifiedNote, PreparedNote
 
@@ -72,11 +72,23 @@ async def _git(args: list[str], cwd: Path) -> str:
 
 
 class GitHubHand:
-    """`prepare`: build + local commit. `execute`: real push, only once approved."""
+    """`prepare`: build + local commit. `execute`: real push, only once approved.
 
-    def __init__(self, builder: Builder | None = None, settings: Settings | None = None) -> None:
-        self._builder = builder or MockBuilder()
+    `builder` (prepare-time) is always MockBuilder, regardless of AXON_BUILDER — drafting
+    a note must never cost anything (Step 12). `real_builder` (execute-time) is what
+    AXON_BUILDER actually selects: MockBuilder again unless the human opted into
+    AXON_BUILDER=claude, in which case approving this note spends real Claude usage.
+    """
+
+    def __init__(
+        self,
+        builder: Builder | None = None,
+        real_builder: Builder | None = None,
+        settings: Settings | None = None,
+    ) -> None:
         self._settings = settings or get_settings()
+        self._builder = builder or MockBuilder()
+        self._real_builder = real_builder or get_builder(self._settings)
 
     def _repo_name(self, note: ClassifiedNote) -> str:
         return f"{note.note_id}-{slugify(note.text)}"
@@ -105,9 +117,19 @@ class GitHubHand:
             cwd=project_dir,
         )
 
+        detail = f"committed {len(files)} file(s) to {project_dir}"
+        if self._real_builder.name == "claude":
+            # Step 12's usage warning: shown on the approval screen, before anything is
+            # spent — approving is the moment this stub gets replaced by a real Claude
+            # Code build, which draws on your Pro plan's shared usage, not a free action.
+            detail += (
+                " (draft only — approving will run a REAL Claude Code build here, "
+                "using your Claude Pro plan's usage)"
+            )
+
         return PreparedNote(
             note=note,
-            detail=f"committed {len(files)} file(s) to {project_dir}",
+            detail=detail,
             project_dir=str(project_dir),
             push_url=self._push_url(note),
         )
@@ -130,6 +152,19 @@ class GitHubHand:
             raise RuntimeError(
                 "GITHUB_USERNAME is not set in .env — Axon doesn't know where to push. "
                 f"The commit is safe at {project_dir}; set GITHUB_USERNAME and re-approve."
+            )
+
+        if self._real_builder.name == "claude":
+            # Only reachable once approved (ExecuteExecutor checks outcome.approved
+            # before calling this at all) -- this is the one place Step 12 spends real
+            # Claude usage. Off the event loop thread for the same reason as the git
+            # calls: it can take minutes, and this shares the workflow's own loop.
+            await asyncio.to_thread(self._real_builder.build, note, project_dir)
+            await _git(["add", "-A"], cwd=project_dir)
+            await _git(
+                ["-c", "user.email=axon@localhost", "-c", "user.name=Axon",
+                 "commit", "-m", f"Axon (Claude Code): {note.text}"],
+                cwd=project_dir,
             )
 
         existing_remotes = await _git(["remote"], cwd=project_dir)

@@ -6,6 +6,7 @@ Everything here has a working default, so Axon runs with no .env file at all.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -38,6 +39,11 @@ class Settings:
     # V3 Step 15: files & docs hand. Real deliverables, kept separate from
     # projects_dir (GitHub-built code) and data/ (Axon's own internal state).
     documents_dir: Path = Path("./documents")
+    # Step 12: real Claude Code builder for GitHub projects. Opt-in and off by default —
+    # unlike every other setting here, this one spends real Claude usage (your Pro
+    # plan's shared pool) every time an approved GitHub-build note runs. The free
+    # MockBuilder is used unless this is explicitly set to "claude".
+    axon_builder: str = "mock"
 
     @property
     def db_path(self) -> Path:
@@ -64,7 +70,12 @@ def load_settings() -> Settings:
     key = (os.getenv("GEMINI_API_KEY") or "").strip()
     username = (os.getenv("GITHUB_USERNAME") or "").strip()
     email_address = (os.getenv("EMAIL_ADDRESS") or "").strip()
-    email_app_password = (os.getenv("EMAIL_APP_PASSWORD") or "").strip()
+    # Google *displays* an app password as "abcd efgh ijkl mnop", so pasting it exactly
+    # as shown is the natural thing to do — but SMTP login needs the bare 16 characters,
+    # and the separators Google renders are non-breaking spaces (\xa0), not plain ones.
+    # Left unhandled that surfaces as a UnicodeEncodeError deep inside smtplib rather
+    # than anything resembling "your password has spaces in it". Strip all whitespace.
+    email_app_password = re.sub(r"\s", "", os.getenv("EMAIL_APP_PASSWORD") or "")
     chat_webhook_url = (os.getenv("CHAT_WEBHOOK_URL") or "").strip()
     return Settings(
         data_dir=Path(os.getenv("AXON_DATA_DIR") or "./data").resolve(),
@@ -78,6 +89,7 @@ def load_settings() -> Settings:
         smtp_port=int(os.getenv("SMTP_PORT") or "587"),
         chat_webhook_url=chat_webhook_url or None,
         documents_dir=Path(os.getenv("AXON_DOCUMENTS_DIR") or "./documents").resolve(),
+        axon_builder=(os.getenv("AXON_BUILDER") or "mock").strip().lower(),
     )
 
 

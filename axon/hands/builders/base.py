@@ -21,3 +21,21 @@ class Builder(Protocol):
     def build(self, note: ClassifiedNote, project_dir: Path) -> list[str]:
         """Write files under `project_dir` (already created). Returns filenames written."""
         ...
+
+
+def get_builder(settings=None) -> "Builder":
+    """Pick a builder: the real Claude Code one only if AXON_BUILDER=claude is set,
+    the free mock otherwise. Same "same interface, mock stays default" pattern as
+    axon.brain.classifier.get_brain — see docs/V2-PLAN.md Step 12.
+
+    Deferred imports so a machine that never opts in never needs anything Step-12-only.
+    """
+    from axon.config import get_settings
+    from axon.hands.builders.mock import MockBuilder
+
+    settings = settings or get_settings()
+    if settings.axon_builder == "claude":
+        from axon.hands.builders.claude_code import ClaudeCodeBuilder
+
+        return ClaudeCodeBuilder()
+    return MockBuilder()

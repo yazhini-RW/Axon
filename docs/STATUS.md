@@ -1,6 +1,6 @@
 # Axon — Status
 
-**Last updated: 2026-08-06.** Point a new session here for "where is this project?"
+**Last updated: 2026-08-07.** Point a new session here for "where is this project?"
 before reading anything else. For *why* each step is the way it is, read the commit
 messages (`git log`, not `--oneline`) — they carry the reasoning. For the original build
 plan, see [V2-PLAN.md](V2-PLAN.md).
@@ -18,7 +18,7 @@ plan, see [V2-PLAN.md](V2-PLAN.md).
 | Scheduling | APScheduler + `dateparser` |
 | CLI | Typer + Rich |
 | Web backend | FastAPI + Uvicorn |
-| Web UI | Plain HTML/CSS/JS, two-column dashboard — no framework, no build step |
+| Web UI | Plain HTML/CSS/JS in one file — two-column dashboard, aurora background, staggered animations. No framework, no build step, works offline. |
 | Smart brain (optional) | Google Gemini, via `agent-framework-openai`'s `OpenAIChatCompletionClient` against Gemini's OpenAI-compatible endpoint |
 | Hands | `git` (shelled out), `smtplib` (stdlib, email), `httpx` (Slack/Teams webhook + DuckDuckGo) |
 | Project builder | `MockBuilder` (free, default) or `ClaudeCodeBuilder` (spawns the `claude` CLI, opt-in via `AXON_BUILDER=claude`) |
@@ -112,7 +112,30 @@ otherwise trigger real sends from your accounts.
 
 ---
 
-## 6. Bugs found and fixed on 2026-08-06
+## 6. Web UI
+
+One file, [`axon/web/static/index.html`](../axon/web/static/index.html) — inline CSS and
+vanilla JS calling the same `/api/*` routes the CLI calls in-process. Deliberately no npm
+and no build step (V2-PLAN Step 11); Next.js was considered on 2026-08-06 and rejected
+for that reason — "better UI" was a design problem, not a framework one.
+
+Layout: main column (Capture + Notes), sticky sidebar (Approvals + Recall), collapsing to
+one column under 940px. Light/dark via `prefers-color-scheme` with a `data-theme`
+override, and ambient motion drops out under `prefers-reduced-motion`.
+
+Two details that carry meaning rather than decoration:
+
+- **Recall score bars.** A proportional bar under each hit makes "0.59 vs 0.58" read as
+  the near-tie it is — the bare numbers hide that, and it's the same honesty the
+  "not confident which you meant" line already tries to convey.
+- **Example chips under the capture box.** They fill the input rather than submitting.
+  They exist because of a real question asked while demoing: *"where is the research
+  button?"* There isn't one — every kind of note goes through the same box, and watching
+  an example land there is what makes that legible.
+
+---
+
+## 7. Bugs found and fixed on 2026-08-06
 
 - **`win11toast` broke the Linux build.** It pulls in the `winrt` native extension, which
   has no Linux wheels, so Render's build failed outright. The code already degraded to

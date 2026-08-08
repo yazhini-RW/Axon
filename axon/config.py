@@ -39,6 +39,15 @@ class Settings:
     # V3 Step 15: files & docs hand. Real deliverables, kept separate from
     # projects_dir (GitHub-built code) and data/ (Axon's own internal state).
     documents_dir: Path = Path("./documents")
+    # V3 Step 17: WhatsApp via Meta's Cloud API. Free on the test-number tier -- a test
+    # sender Meta provides, messaging only numbers you verified in their dashboard.
+    # A business-initiated WhatsApp message cannot be arbitrary text: it must go through
+    # an approved template, so the template name is configurable rather than hardcoded
+    # (which template exists depends on the account, and Axon shouldn't guess).
+    whatsapp_token: str | None = None
+    whatsapp_phone_number_id: str | None = None
+    whatsapp_to: str | None = None
+    whatsapp_template: str = "hello_world"
     # Step 12: real Claude Code builder for GitHub projects. Opt-in and off by default —
     # unlike every other setting here, this one spends real Claude usage (your Pro
     # plan's shared pool) every time an approved GitHub-build note runs. The free
@@ -89,6 +98,12 @@ def load_settings() -> Settings:
         smtp_port=int(os.getenv("SMTP_PORT") or "587"),
         chat_webhook_url=chat_webhook_url or None,
         documents_dir=Path(os.getenv("AXON_DOCUMENTS_DIR") or "./documents").resolve(),
+        whatsapp_token=(os.getenv("WHATSAPP_TOKEN") or "").strip() or None,
+        whatsapp_phone_number_id=(os.getenv("WHATSAPP_PHONE_NUMBER_ID") or "").strip() or None,
+        # Digits only: WhatsApp wants no '+', and a pasted number often carries spaces
+        # or dashes from wherever it was copied from.
+        whatsapp_to=re.sub(r"\D", "", os.getenv("WHATSAPP_TO") or "") or None,
+        whatsapp_template=(os.getenv("WHATSAPP_TEMPLATE") or "hello_world").strip(),
         axon_builder=(os.getenv("AXON_BUILDER") or "mock").strip().lower(),
     )
 

@@ -11,6 +11,7 @@ from axon.hands.files import FilesHand, looks_like_a_files_note
 from axon.hands.github import GitHubHand, looks_like_a_github_note
 from axon.hands.noop import NoopHand
 from axon.hands.research import ResearchHand, looks_like_a_research_note
+from axon.hands.whatsapp import WhatsAppHand, looks_like_a_whatsapp_note
 
 __all__ = [
     "Hand", "NoopHand", "GitHubHand", "looks_like_a_github_note",
@@ -18,6 +19,7 @@ __all__ = [
     "ChatHand", "looks_like_a_chat_note",
     "FilesHand", "looks_like_a_files_note",
     "ResearchHand", "looks_like_a_research_note",
+    "WhatsAppHand", "looks_like_a_whatsapp_note",
 ]
 
 
@@ -34,6 +36,11 @@ def pick_hand(text: str, settings=None) -> Hand:
         return EmailHand(settings=settings)
     if looks_like_a_chat_note(text):
         return ChatHand(settings=settings)
+    # Ahead of files and research: "whatsapp me what is the eiffel tower" names a
+    # delivery channel explicitly, and that should win over research's much broader
+    # "what is" trigger. Naming WhatsApp is a deliberate act; "what is" is incidental.
+    if looks_like_a_whatsapp_note(text):
+        return WhatsAppHand(settings=settings)
     if looks_like_a_files_note(text):
         return FilesHand(settings=settings)
     if looks_like_a_research_note(text):

@@ -98,8 +98,13 @@ async def test_execute_without_webhook_url_raises_clearly(settings: Settings) ->
 async def test_execute_posts_the_drafted_message(settings: Settings) -> None:
     """Doesn't hit a real Slack/Teams webhook (no free, safe way to do that in a test
     suite) - patches httpx.AsyncClient and asserts Axon posts the right URL and body,
-    which is the part Axon controls. The real post path was verified manually against
-    a real webhook."""
+    which is the part Axon controls.
+
+    NOTE: the real post path has NEVER been exercised -- no CHAT_WEBHOOK_URL has ever
+    been configured, so nothing has been posted to a real Slack or Teams channel. An
+    earlier version of this docstring claimed it had been verified manually; that was
+    untrue and is the kind of claim a later reader would take at face value and wrongly
+    cross off. See docs/STATUS.md's remaining-work table."""
     configured = replace(settings, chat_webhook_url="https://hooks.example.com/abc123")
     hand = ChatHand(settings=configured)
     note = _note("tell the team standup moved to 10")

@@ -1,6 +1,6 @@
 # Axon — Status
 
-**Last updated: 2026-08-07.** Point a new session here for "where is this project?"
+**Last updated: 2026-08-10.** Point a new session here for "where is this project?"
 before reading anything else. For *why* each step is the way it is, read the commit
 messages (`git log`, not `--oneline`) — they carry the reasoning. For the original build
 plan, see [V2-PLAN.md](V2-PLAN.md).
@@ -20,9 +20,9 @@ plan, see [V2-PLAN.md](V2-PLAN.md).
 | Web backend | FastAPI + Uvicorn |
 | Web UI | Plain HTML/CSS/JS in one file — two-column dashboard, aurora background, staggered animations. No framework, no build step, works offline. |
 | Smart brain (optional) | Google Gemini, via `agent-framework-openai`'s `OpenAIChatCompletionClient` against Gemini's OpenAI-compatible endpoint |
-| Hands | `git` (shelled out), `smtplib` (stdlib, email), `httpx` (Slack/Teams webhook + DuckDuckGo) |
+| Hands | `git` (shelled out), `smtplib` (stdlib, email), `httpx` (Slack/Teams webhook, WhatsApp Cloud API, DuckDuckGo) |
 | Project builder | `MockBuilder` (free, default) or `ClaudeCodeBuilder` (spawns the `claude` CLI, opt-in via `AXON_BUILDER=claude`) |
-| Tests | pytest + pytest-asyncio — 206 tests (195 fast, 11 slow) |
+| Tests | pytest + pytest-asyncio — 227 tests (216 fast, 11 slow) |
 | Config | `python-dotenv` reading `.env` |
 | Deployment | Render free tier, config in [`render.yaml`](../render.yaml) |
 
@@ -34,6 +34,7 @@ plan, see [V2-PLAN.md](V2-PLAN.md).
 | --- | --- |
 | **Step 12 — real Claude Code builder** | ✅ Built and wired, ❌ **never run for real.** Off by default. |
 | **Email hand — real verification** | ✅ **Done** (2026-08-06). Real email sent through the full workflow and confirmed received. |
+| **WhatsApp hand (Step 17)** | ✅ **Done** (2026-08-10). Real message sent via Meta's Cloud API through the full workflow and confirmed received. |
 | **Chat hand — real verification** | ❌ Built and unit-tested against a *mock* webhook. Never posted to a real Slack/Teams. Needs a real `CHAT_WEBHOOK_URL`, then one real post → approve → confirm. |
 
 ### 1b. Prerequisites before Step 12 can be tested
@@ -112,7 +113,31 @@ otherwise trigger real sends from your accounts.
 
 ---
 
-## 6. Web UI
+## 6. WhatsApp hand (Step 17)
+
+Uses Meta's Cloud API on the free test-number tier — a test sender Meta provides,
+messaging only the ~5 numbers verified in the Meta dashboard. Same two-half shape as
+email and chat: `prepare()` drafts locally and costs nothing, `execute()` makes the one
+real API call and only runs after approval.
+
+Business-initiated WhatsApp messages cannot be arbitrary text — they must go through an
+approved template, so `execute()` always sends one (`WHATSAPP_TEMPLATE` in `.env`,
+default `axon_note`), with the note's text passed as a `{{1}}` body parameter. The
+template created for this project: category Utility, body
+`Axon: {{1}} (sent from your second brain)`.
+
+Auth uses a **System User token** (Business Settings → Users → System users), not the
+24-hour dashboard token — generated with `whatsapp_business_messaging` and
+`whatsapp_business_management` permissions, 60-day expiry. One non-obvious step: the
+system user also needed an explicit **app role** (Settings → Accounts → Apps → Axon →
+add `axon-sender` → "Test app") before the token dialog would offer any permissions to
+select at all — without that role the permission list is simply empty.
+
+Routing matches only explicit "whatsapp"/"wa" mentions, deliberately narrower than the
+other hands: "message me" or "text me" reads just as naturally as SMS, and a wrong guess
+here puts a real message on a real phone rather than just misfiling a note.
+
+## 7. Web UI
 
 One file, [`axon/web/static/index.html`](../axon/web/static/index.html) — inline CSS and
 vanilla JS calling the same `/api/*` routes the CLI calls in-process. Deliberately no npm
@@ -135,7 +160,7 @@ Two details that carry meaning rather than decoration:
 
 ---
 
-## 7. Bugs found and fixed on 2026-08-06
+## 8. Bugs found and fixed on 2026-08-06
 
 - **`win11toast` broke the Linux build.** It pulls in the `winrt` native extension, which
   has no Linux wheels, so Render's build failed outright. The code already degraded to

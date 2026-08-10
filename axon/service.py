@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 
 from axon.config import Settings, get_settings
 from axon.db import repo
-from axon.models import ApprovalOutcome, ClassifiedNote, Note, NoteStatus
+from axon.models import ApprovalOutcome, ClassifiedNote, Note, NoteStatus, utcnow
 from axon.memory.store import MemoryLocked, Recollection
 
 __all__ = [
@@ -34,6 +35,7 @@ __all__ = [
     "recall",
     "list_approvals",
     "resolve_approval",
+    "fire_scheduled_approvals",
     "doctor_info",
 ]
 
@@ -88,6 +90,10 @@ class ResolveResult:
     action: str
     note_text: str
     paused_again: bool  # not reachable in V1/V2 (one gate); kept for forward compat
+    # Step 19. Set when this call scheduled rather than sent -- the human's "yes" is
+    # recorded, but no hand has run yet. None means "already executed", same as before
+    # this field existed.
+    scheduled_for: datetime | None = None
 
 
 @dataclass
@@ -164,7 +170,11 @@ def add_note(
                 conn, note.id, classification.kind, classification.due_at,
                 status=NoteStatus.AWAITING_APPROVAL,
             )
+            # Step 19: a 'scheduled' approval's checkpoint has to survive too -- it's
+            # already been said yes to, just not run yet. Missing this here would
+            # silently delete a scheduled send's ability to ever fire.
             keep = {a.checkpoint_id for a in repo.list_pending_approvals(conn)}
+            keep |= {a.checkpoint_id for a in repo.list_scheduled_approvals(conn)}
             asyncio.run(sweep_checkpoints(settings, keep))
 
             return AddResult(
@@ -219,17 +229,26 @@ def list_approvals(settings: Settings | None = None) -> list[repo.Approval]:
 
 
 def resolve_approval(
-    approval_id: int, approved: bool, settings: Settings | None = None
+    approval_id: int,
+    approved: bool,
+    settings: Settings | None = None,
+    *,
+    send_at: datetime | None = None,
 ) -> ResolveResult:
     """Approve or reject a paused note.
+
+    `send_at` only matters when `approved` is True (Step 19): omitted, or at/before
+    now, behaves exactly as before this parameter existed -- resumes and runs the
+    hand's execute() immediately. A future `send_at` instead records the "yes" and
+    leaves the checkpoint paused; nothing runs until fire_scheduled_approvals() (called
+    from the reminder daemon's sync loop) resumes it at that time. A reject is never
+    scheduled -- there is nothing to wait for.
 
     Raises ApprovalNotFound / ApprovalAlreadyResolved, or ApprovalExecutionFailed if a
     hand's execute() raised (e.g. GitHubHand.execute() with no GITHUB_USERNAME set) —
     in which case the approval is left `pending`, not marked resolved, so fixing the
     problem and re-approving retries cleanly rather than losing the local commit.
     """
-    from axon.brain.workflow import PendingApproval, resume_capture, sweep_checkpoints
-
     settings = settings or get_settings()
     with repo.open_db(settings) as conn:
         approval = repo.get_approval(conn, approval_id)
@@ -238,28 +257,76 @@ def resolve_approval(
         if approval.status != "pending":
             raise ApprovalAlreadyResolved(approval.status)
 
-        persist = _persist_into(conn)
-        pending = PendingApproval(
-            note_id=approval.note_id,
-            request_id=approval.request_id,
-            checkpoint_id=approval.checkpoint_id,
-        )
-        try:
-            capture = asyncio.run(resume_capture(pending, approved, persist, settings=settings))
-        except Exception as exc:
-            raise ApprovalExecutionFailed(str(exc)) from exc
+        if approved and send_at is not None and send_at > utcnow():
+            repo.schedule_approval(conn, approval_id, scheduled_for=send_at)
+            # The checkpoint stays paused on purpose -- see list_scheduled_approvals'
+            # docstring for why it must be kept alive here rather than swept.
+            keep = {a.checkpoint_id for a in repo.list_pending_approvals(conn)}
+            keep |= {a.checkpoint_id for a in repo.list_scheduled_approvals(conn)}
+            from axon.brain.workflow import sweep_checkpoints
 
-        repo.resolve_approval(conn, approval_id, approved=approved)
-        keep = {a.checkpoint_id for a in repo.list_pending_approvals(conn)}
-        asyncio.run(sweep_checkpoints(settings, keep))
+            asyncio.run(sweep_checkpoints(settings, keep))
+            return ResolveResult(
+                approval_id=approval_id, approved=True, action=approval.action,
+                note_text=approval.note_text, paused_again=False, scheduled_for=send_at,
+            )
 
-        return ResolveResult(
-            approval_id=approval_id,
-            approved=approved,
-            action=approval.action,
-            note_text=approval.note_text,
-            paused_again=capture.pending is not None,
-        )
+        return _execute_approval(conn, approval, approved, settings)
+
+
+def _execute_approval(conn, approval, approved: bool, settings: Settings) -> ResolveResult:
+    """The part of resolve_approval that actually resumes the workflow -- shared by an
+    immediate approve/reject and by a scheduled approval whose time has arrived
+    (fire_scheduled_approvals), so both paths run the exact same code."""
+    from axon.brain.workflow import PendingApproval, resume_capture, sweep_checkpoints
+
+    persist = _persist_into(conn)
+    pending = PendingApproval(
+        note_id=approval.note_id,
+        request_id=approval.request_id,
+        checkpoint_id=approval.checkpoint_id,
+    )
+    try:
+        capture = asyncio.run(resume_capture(pending, approved, persist, settings=settings))
+    except Exception as exc:
+        raise ApprovalExecutionFailed(str(exc)) from exc
+
+    repo.resolve_approval(conn, approval.id, approved=approved)
+    keep = {a.checkpoint_id for a in repo.list_pending_approvals(conn)}
+    keep |= {a.checkpoint_id for a in repo.list_scheduled_approvals(conn)}
+    asyncio.run(sweep_checkpoints(settings, keep))
+
+    return ResolveResult(
+        approval_id=approval.id,
+        approved=approved,
+        action=approval.action,
+        note_text=approval.note_text,
+        paused_again=capture.pending is not None,
+    )
+
+
+def fire_scheduled_approvals(settings: Settings | None = None) -> list[ResolveResult]:
+    """Run every scheduled approval whose time has arrived. Called from the reminder
+    daemon's sync loop (Step 19) -- scheduled sends only happen while `axon run` is
+    active, same as reminder notifications always have.
+
+    A send that raises here behaves like ApprovalExecutionFailed always has: the row
+    stays 'scheduled' (resolve_approval is never reached on that path inside
+    _execute_approval), so the next sync retries it rather than losing it silently.
+    """
+    settings = settings or get_settings()
+    fired: list[ResolveResult] = []
+    with repo.open_db(settings) as conn:
+        due = [
+            a for a in repo.list_scheduled_approvals(conn)
+            if a.scheduled_for is not None and a.scheduled_for <= utcnow()
+        ]
+        for approval in due:
+            try:
+                fired.append(_execute_approval(conn, approval, True, settings))
+            except ApprovalExecutionFailed:
+                continue
+    return fired
 
 
 def doctor_info(settings: Settings | None = None) -> DoctorInfo:

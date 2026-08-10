@@ -109,10 +109,18 @@ class ApprovalOut(BaseModel):
     # verbatim so the human approves what will actually be delivered, not a summary.
     draft_subject: str | None = None
     draft_body: str | None = None
+    # Step 19: only ever set for a NoteKind.REMINDER note that also sends a message --
+    # the UI uses this to pre-fill the "when" field rather than leaving it empty.
+    note_due_at: datetime | None = None
 
 
 class ApprovalsListResponse(BaseModel):
     approvals: list[ApprovalOut]
+
+
+class ResolveRequest(BaseModel):
+    # Step 19. Absent or null: send now, unchanged from before this field existed.
+    send_at: datetime | None = None
 
 
 class ResolveResponse(BaseModel):
@@ -121,6 +129,7 @@ class ResolveResponse(BaseModel):
     action: str
     note_text: str
     paused_again: bool
+    scheduled_for: datetime | None = None
 
 
 class DoctorResponse(BaseModel):
@@ -211,15 +220,18 @@ def list_approvals() -> ApprovalsListResponse:
                 id=a.id, note_id=a.note_id, action=a.action, note_text=a.note_text,
                 detail=a.detail, project_dir=a.project_dir, push_url=a.push_url,
                 draft_subject=a.draft_subject, draft_body=a.draft_body,
+                note_due_at=a.note_due_at,
             )
             for a in pending
         ]
     )
 
 
-def _resolve(approval_id: int, approved: bool) -> ResolveResponse:
+def _resolve(
+    approval_id: int, approved: bool, send_at: datetime | None = None
+) -> ResolveResponse:
     try:
-        result = service.resolve_approval(approval_id, approved)
+        result = service.resolve_approval(approval_id, approved, send_at=send_at)
     except service.ApprovalNotFound as exc:
         raise HTTPException(status_code=404, detail=f"no approval #{approval_id}") from exc
     except service.ApprovalAlreadyResolved as exc:
@@ -238,12 +250,15 @@ def _resolve(approval_id: int, approved: bool) -> ResolveResponse:
     return ResolveResponse(
         approval_id=result.approval_id, approved=result.approved, action=result.action,
         note_text=result.note_text, paused_again=result.paused_again,
+        scheduled_for=result.scheduled_for,
     )
 
 
 @app.post("/api/approvals/{approval_id}/approve", response_model=ResolveResponse)
-def approve(approval_id: int) -> ResolveResponse:
-    return _resolve(approval_id, approved=True)
+def approve(approval_id: int, body: ResolveRequest | None = None) -> ResolveResponse:
+    # Step 19: body is optional so an old client (or a plain curl with no JSON) still
+    # behaves exactly as before -- send now.
+    return _resolve(approval_id, approved=True, send_at=body.send_at if body else None)
 
 
 @app.post("/api/approvals/{approval_id}/reject", response_model=ResolveResponse)

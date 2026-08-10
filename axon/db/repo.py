@@ -19,7 +19,7 @@ from pathlib import Path
 from axon.config import Settings, get_settings
 from axon.models import Note, NoteKind, NoteStatus, utcnow
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS notes (
@@ -67,6 +67,17 @@ ALTER TABLE approvals ADD COLUMN push_url TEXT;
 _SCHEMA_V4 = """
 ALTER TABLE approvals ADD COLUMN draft_subject TEXT;
 ALTER TABLE approvals ADD COLUMN draft_body TEXT;
+"""
+
+# Step 19: "approve" no longer has to mean "right now". status can now also be
+# 'scheduled' -- approved by the human, but the paused checkpoint deliberately left
+# untouched until scheduled_for arrives, at which point the reminder daemon resumes it
+# exactly the way a human clicking Approve would. See axon/scheduler/runner.py.
+# CRITICAL: sweep_checkpoints() only keeps checkpoints for approvals list_pending_
+# approvals() returns; a 'scheduled' row that query doesn't see would have its
+# checkpoint deleted out from under it before it ever fires. See list_pending_approvals.
+_SCHEMA_V5 = """
+ALTER TABLE approvals ADD COLUMN scheduled_for TEXT;
 """
 
 
@@ -143,7 +154,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.executescript(_SCHEMA_V1)  # CREATE TABLE IF NOT EXISTS: safe if raced
     if version < 2:
         conn.executescript(_SCHEMA_V2)  # same
-    for target, script in ((3, _SCHEMA_V3), (4, _SCHEMA_V4)):
+    for target, script in ((3, _SCHEMA_V3), (4, _SCHEMA_V4), (5, _SCHEMA_V5)):
         if version >= target:
             continue
         try:
@@ -247,13 +258,20 @@ class Approval:
     request_id: str
     checkpoint_id: str
     action: str
-    status: str  # "pending" | "approved" | "rejected"
+    status: str  # "pending" | "approved" | "rejected" | "scheduled"
     note_text: str = ""
     detail: str = ""
     project_dir: str | None = None
     push_url: str | None = None
     draft_subject: str | None = None
     draft_body: str | None = None
+    # Step 19. Set only when status == "scheduled" -- the human already said yes, this
+    # is when the daemon should actually run it. None everywhere else.
+    scheduled_for: datetime | None = None
+    # Step 19. The underlying note's own due_at (e.g. from "tomorrow" in the text), so
+    # the web UI can pre-fill the "when should this send" field instead of leaving a
+    # timed note's own time unused. None for a note with no time in it.
+    note_due_at: datetime | None = None
 
 
 def create_approval(
@@ -294,12 +312,14 @@ def _row_to_approval(row: sqlite3.Row) -> Approval:
         push_url=row["push_url"],
         draft_subject=row["draft_subject"],
         draft_body=row["draft_body"],
+        scheduled_for=_from_db(row["scheduled_for"]),
+        note_due_at=_from_db(row["note_due_at"]),
     )
 
 
 def get_approval(conn: sqlite3.Connection, approval_id: int) -> Approval | None:
     row = conn.execute(
-        "SELECT a.*, n.text AS note_text FROM approvals a "
+        "SELECT a.*, n.text AS note_text, n.due_at AS note_due_at FROM approvals a "
         "JOIN notes n ON n.id = a.note_id WHERE a.id = ?",
         (approval_id,),
     ).fetchone()
@@ -308,13 +328,33 @@ def get_approval(conn: sqlite3.Connection, approval_id: int) -> Approval | None:
 
 def list_pending_approvals(conn: sqlite3.Connection) -> list[Approval]:
     rows = conn.execute(
-        "SELECT a.*, n.text AS note_text FROM approvals a "
+        "SELECT a.*, n.text AS note_text, n.due_at AS note_due_at FROM approvals a "
         "JOIN notes n ON n.id = a.note_id WHERE a.status = 'pending' ORDER BY a.id"
     ).fetchall()
     return [
         _row_to_approval(r)
         for r in rows
     ]
+
+
+def list_scheduled_approvals(conn: sqlite3.Connection) -> list[Approval]:
+    """Approved, waiting for their time -- see sweep_checkpoints' keep-set in
+    axon.service for why these MUST be included alongside pending approvals there."""
+    rows = conn.execute(
+        "SELECT a.*, n.text AS note_text, n.due_at AS note_due_at FROM approvals a "
+        "JOIN notes n ON n.id = a.note_id WHERE a.status = 'scheduled' ORDER BY a.scheduled_for"
+    ).fetchall()
+    return [_row_to_approval(r) for r in rows]
+
+
+def schedule_approval(conn: sqlite3.Connection, approval_id: int, *, scheduled_for: datetime) -> None:
+    """The human said yes, but for later -- see resolve_approval in axon.service for
+    the "now vs later" branch this backs. Deliberately does NOT set resolved_at: the
+    approval isn't resolved yet, only decided."""
+    conn.execute(
+        "UPDATE approvals SET status = 'scheduled', scheduled_for = ? WHERE id = ?",
+        (_to_db(scheduled_for), approval_id),
+    )
 
 
 def resolve_approval(conn: sqlite3.Connection, approval_id: int, *, approved: bool) -> None:

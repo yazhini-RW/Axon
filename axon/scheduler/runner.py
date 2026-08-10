@@ -65,7 +65,7 @@ class ReminderService:
     def sync(self) -> dict[str, int]:
         """Load anything new from SQLite. Safe to call repeatedly."""
         self._ensure_running()
-        counts = {"scheduled": 0, "fired": 0, "missed": 0}
+        counts = {"scheduled": 0, "fired": 0, "missed": 0, "sent": 0}
         now = utcnow()
 
         with repo.open_db(self._settings) as conn:
@@ -82,6 +82,16 @@ class ReminderService:
                 with repo.open_db(self._settings) as conn:
                     repo.set_status(conn, note.id, NoteStatus.MISSED)
                 counts["missed"] += 1
+
+        # Step 19: approvals the human already said yes to, waiting for their time --
+        # a scheduled email/WhatsApp/chat send. Distinct from the reminder notes above
+        # (those just notify; this actually runs the hand's real action). No overdue-
+        # grace/missed concept here: a late scheduled send still goes out late, it is
+        # never silently dropped -- see fire_scheduled_approvals' docstring.
+        from axon import service
+
+        for result in service.fire_scheduled_approvals(self._settings):
+            counts["sent"] += 1
 
         return counts
 

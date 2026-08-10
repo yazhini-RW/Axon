@@ -541,6 +541,28 @@
     max-height: 15em;
     overflow-y: auto;
   }
+  /* Step 19: when to actually send. Only rendered for hands that carry a draft
+     (email/WhatsApp/chat) -- GitHub/files still send the instant you approve. */
+  .when-choice {
+    display: flex; gap: 0.5rem; margin-top: 0.75rem;
+    font-size: 0.8rem;
+  }
+  .when-choice label {
+    display: flex; align-items: center; gap: 0.35em;
+    color: var(--muted); cursor: pointer;
+  }
+  .when-choice input[type="radio"] { accent-color: var(--accent); }
+  .when-time {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    background: var(--panel-solid);
+    color: var(--text);
+    font-size: 0.82rem;
+    width: 100%;
+  }
+  .when-time:disabled { opacity: 0.5; }
   .approval-actions { display: flex; gap: 0.5rem; margin-top: 0.85rem; }
   .approval-actions button { flex: 1; padding: 0.58rem 0.9rem; font-size: 0.85rem; }
 
@@ -811,6 +833,7 @@ async function refreshApprovals() {
           <p class="draft-body">${escapeHtml(a.draft_body)}</p>
         </div>` : ""}
       ${a.push_url ? `<div class="approval-command">will run: git push ${escapeHtml(a.push_url)}</div>` : ""}
+      ${whenChoiceHtml(a)}
       <div class="approval-actions">
         <button class="approve-btn" data-id="${a.id}"><span class="btn-label">Approve</span></button>
         <button class="secondary reject-btn" data-id="${a.id}"><span class="btn-label">Reject</span></button>
@@ -820,6 +843,38 @@ async function refreshApprovals() {
 
   el.querySelectorAll(".approve-btn").forEach(btn => btn.addEventListener("click", () => resolveApproval(btn.dataset.id, true)));
   el.querySelectorAll(".reject-btn").forEach(btn => btn.addEventListener("click", () => resolveApproval(btn.dataset.id, false)));
+  el.querySelectorAll(".when-choice input[type=radio]").forEach(radio => {
+    radio.addEventListener("change", (event) => {
+      const id = event.target.name.replace("when-", "");
+      const timeInput = document.getElementById(`when-time-${id}`);
+      if (timeInput) timeInput.disabled = event.target.value !== "later";
+    });
+  });
+}
+
+// Step 19: only a hand carrying a draft (email/WhatsApp/chat) ever offers a choice --
+// GitHub/files notes have no "later" concept and keep sending the instant you approve.
+// A note that already named a time (note_due_at, e.g. "tomorrow") pre-selects Later
+// with that time already filled in, rather than defaulting to Now and discarding the
+// time the note itself specified.
+function whenChoiceHtml(a) {
+  if (!a.draft_body) return "";
+  const hasTime = !!a.note_due_at;
+  const localValue = hasTime ? toDatetimeLocal(a.note_due_at) : "";
+  return `
+    <div class="when-choice">
+      <label><input type="radio" name="when-${a.id}" value="now" ${hasTime ? "" : "checked"}> Now</label>
+      <label><input type="radio" name="when-${a.id}" value="later" ${hasTime ? "checked" : ""}> Later</label>
+    </div>
+    <input type="datetime-local" class="when-time" id="when-time-${a.id}"
+           value="${localValue}" ${hasTime ? "" : "disabled"}>`;
+}
+
+// datetime-local wants "YYYY-MM-DDTHH:MM" in the viewer's own local time, not UTC.
+function toDatetimeLocal(isoUtc) {
+  const d = new Date(isoUtc);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 async function resolveApproval(id, approved) {
@@ -830,8 +885,24 @@ async function resolveApproval(id, approved) {
   if (activeBtn) setButtonBusy(activeBtn, true, approved ? "Approving..." : "Rejecting...");
   if (feedback) { feedback.innerHTML = ""; feedback.classList.remove("error", "ok"); }
 
+  // Only ever consulted for an approve — reject has nothing to schedule.
+  let sendAt = null;
+  if (approved) {
+    const chosen = document.querySelector(`input[name="when-${id}"]:checked`);
+    if (chosen && chosen.value === "later") {
+      const timeInput = document.getElementById(`when-time-${id}`);
+      if (timeInput && timeInput.value) {
+        sendAt = new Date(timeInput.value).toISOString();
+      }
+    }
+  }
+
   try {
-    await api(`/api/approvals/${id}/${approved ? "approve" : "reject"}`, { method: "POST" });
+    await api(`/api/approvals/${id}/${approved ? "approve" : "reject"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ send_at: sendAt }),
+    });
     await Promise.all([refreshApprovals(), refreshNotes(), refreshDoctor()]);
   } catch (err) {
     if (feedback) { feedback.innerHTML = `${ICON_ERROR}<span>${escapeHtml(err.message)}</span>`; feedback.classList.add("error"); }

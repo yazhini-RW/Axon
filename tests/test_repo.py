@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import timezone
+from datetime import timedelta, timezone
 
 import pytest
 
 from axon.config import Settings
 from axon.db import repo
-from axon.models import NoteKind, NoteStatus
+from axon.models import NoteKind, NoteStatus, utcnow
 
 
 def test_add_note_returns_id_and_defaults(conn: sqlite3.Connection) -> None:
@@ -115,6 +115,48 @@ def test_resolving_records_which_way_it_went(conn: sqlite3.Connection) -> None:
 
 def test_missing_approval_is_none(conn: sqlite3.Connection) -> None:
     assert repo.get_approval(conn, 999) is None
+
+
+# --- scheduling (Step 19) -----------------------------------------------------------
+
+
+def test_scheduling_moves_an_approval_out_of_pending(conn: sqlite3.Connection) -> None:
+    note = repo.add_note(conn, "email bob@example.com about the roadmap")
+    approval_id = repo.create_approval(conn, note.id, "req-1", "ckpt-1", "email")
+    send_at = utcnow() + timedelta(hours=2)
+
+    repo.schedule_approval(conn, approval_id, scheduled_for=send_at)
+
+    approval = repo.get_approval(conn, approval_id)
+    assert approval.status == "scheduled"
+    assert approval.scheduled_for == send_at
+    # Scheduling is a decision, not a resolution -- resolved_at stays unset so
+    # "was this ever actually resolved" remains answerable later.
+    assert repo.list_pending_approvals(conn) == []
+
+
+def test_scheduled_approvals_are_listed_separately_from_pending(
+    conn: sqlite3.Connection,
+) -> None:
+    note = repo.add_note(conn, "email bob@example.com about the roadmap")
+    still_pending = repo.create_approval(conn, note.id, "req-1", "ckpt-1", "email")
+    to_schedule = repo.create_approval(conn, note.id, "req-2", "ckpt-2", "email")
+    repo.schedule_approval(conn, to_schedule, scheduled_for=utcnow() + timedelta(hours=1))
+
+    assert [a.id for a in repo.list_pending_approvals(conn)] == [still_pending]
+    assert [a.id for a in repo.list_scheduled_approvals(conn)] == [to_schedule]
+
+
+def test_scheduled_approvals_are_ordered_by_when_theyre_due(
+    conn: sqlite3.Connection,
+) -> None:
+    note = repo.add_note(conn, "email bob@example.com about the roadmap")
+    later = repo.create_approval(conn, note.id, "req-1", "ckpt-1", "email")
+    sooner = repo.create_approval(conn, note.id, "req-2", "ckpt-2", "email")
+    repo.schedule_approval(conn, later, scheduled_for=utcnow() + timedelta(hours=5))
+    repo.schedule_approval(conn, sooner, scheduled_for=utcnow() + timedelta(minutes=10))
+
+    assert [a.id for a in repo.list_scheduled_approvals(conn)] == [sooner, later]
 
 
 def test_approvals_survive_a_restart(settings: Settings) -> None:

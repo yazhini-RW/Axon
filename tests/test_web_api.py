@@ -156,6 +156,59 @@ def test_approving_an_unknown_id_is_a_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+# --- Step 19: scheduling instead of sending immediately ------------------------------
+
+
+def test_approving_with_a_future_send_at_schedules_instead_of_executing(
+    client: TestClient,
+) -> None:
+    from datetime import timedelta
+
+    from axon.models import utcnow
+
+    add = client.post("/api/notes", json={"text": "send the invoice to the client"})
+    approval_id = add.json()["approval_id"]
+    send_at = (utcnow() + timedelta(hours=2)).isoformat()
+
+    resp = client.post(f"/api/approvals/{approval_id}/approve", json={"send_at": send_at})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["approved"] is True
+    assert body["scheduled_for"] is not None
+    # Scheduled, not yet executed -- still not in the pending list either, since the
+    # human already answered; it just hasn't run.
+    still_pending = client.get("/api/approvals").json()["approvals"]
+    assert still_pending == []
+
+
+def test_approving_with_no_body_still_means_send_now(client: TestClient) -> None:
+    """A plain POST with no JSON body (an old client, or a manual curl) must behave
+    exactly as it did before this endpoint accepted a body at all."""
+    add = client.post("/api/notes", json={"text": "send the invoice to the client"})
+    approval_id = add.json()["approval_id"]
+
+    resp = client.post(f"/api/approvals/{approval_id}/approve")
+
+    assert resp.status_code == 200
+    assert resp.json()["scheduled_for"] is None
+
+
+def test_approving_a_scheduled_one_again_is_a_409(client: TestClient) -> None:
+    from datetime import timedelta
+
+    from axon.models import utcnow
+
+    add = client.post("/api/notes", json={"text": "send the invoice to the client"})
+    approval_id = add.json()["approval_id"]
+    send_at = (utcnow() + timedelta(hours=2)).isoformat()
+    client.post(f"/api/approvals/{approval_id}/approve", json={"send_at": send_at})
+
+    resp = client.post(f"/api/approvals/{approval_id}/approve")
+
+    assert resp.status_code == 409
+
+
 # --- github hand end to end over http -----------------------------------------------
 
 

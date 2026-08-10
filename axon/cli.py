@@ -8,6 +8,7 @@ as rich console output and turn service exceptions into typer.Exit.
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 
 import typer
 from rich.console import Console
@@ -214,7 +215,24 @@ def approvals() -> None:
     console.print("\n[dim]axon approve <#>  or  axon reject <#>[/dim]")
 
 
-def _resolve(approval_id: int, approved: bool) -> None:
+def _parse_send_at(at: str | None) -> datetime | None:
+    """`--at` reuses the same time-understanding the notes themselves use (Step 2's
+    dateparser plumbing via extract_due), rather than a second, different parser with
+    its own quirks and its own bugs to find."""
+    if not at:
+        return None
+    from axon.brain.classifier import extract_due
+
+    parsed, _phrase = extract_due(at)
+    if parsed is None:
+        console.print(f"[red]couldn't understand the time {at!r}[/red]")
+        raise typer.Exit(code=1)
+    return parsed
+
+
+def _resolve(
+    approval_id: int, approved: bool, *, send_at: datetime | None = None
+) -> None:
     """Shared by `approve` and `reject`: resume a paused workflow with the answer.
 
     This can run in a completely different process than the one that paused it — the
@@ -222,7 +240,7 @@ def _resolve(approval_id: int, approved: bool) -> None:
     """
     try:
         with console.status("[dim]resuming...[/dim]"):
-            result = service.resolve_approval(approval_id, approved)
+            result = service.resolve_approval(approval_id, approved, send_at=send_at)
     except service.ApprovalNotFound:
         console.print(f"[red]no approval #{approval_id}[/red]")
         raise typer.Exit(code=1) from None
@@ -236,6 +254,15 @@ def _resolve(approval_id: int, approved: bool) -> None:
         )
         raise typer.Exit(code=1) from None
 
+    if result.scheduled_for is not None:
+        when = result.scheduled_for.astimezone().strftime("%a %b %-d, %-I:%M %p")
+        console.print(
+            f"[green]approved[/green] #{approval_id}: {result.action} "
+            f"\"{result.note_text}\" — [dim]scheduled for {when} (axon run must be "
+            f"active for it to send)[/dim]"
+        )
+        return
+
     verb = "approved" if approved else "rejected"
     colour = "green" if approved else "yellow"
     console.print(
@@ -246,9 +273,16 @@ def _resolve(approval_id: int, approved: bool) -> None:
 
 
 @app.command()
-def approve(approval_id: int = typer.Argument(..., help="From `axon approvals`.")) -> None:
-    """Give the OK to a paused, risky action."""
-    _resolve(approval_id, approved=True)
+def approve(
+    approval_id: int = typer.Argument(..., help="From `axon approvals`."),
+    at: str = typer.Option(
+        None, "--at",
+        help='When to actually send, e.g. "tomorrow 3pm". Omit to send now.',
+    ),
+) -> None:
+    """Give the OK to a paused, risky action. `--at` schedules it instead of sending
+    immediately -- the message doesn't go out until axon run reaches that time."""
+    _resolve(approval_id, approved=True, send_at=_parse_send_at(at))
 
 
 @app.command()
@@ -270,6 +304,8 @@ def run() -> None:
         console.print(f"  fired [yellow]{counts['fired']}[/yellow] overdue reminder(s) just now")
     if counts["missed"]:
         console.print(f"  marked [dim]{counts['missed']}[/dim] as missed (more than a day late)")
+    if counts.get("sent"):
+        console.print(f"  sent [green]{counts['sent']}[/green] scheduled message(s) just now")
     console.print(f"  watching [bold]{counts['scheduled']}[/bold] reminder(s)")
     console.print(f"[dim]  checking for new notes every {SYNC_SECONDS}s[/dim]")
 

@@ -35,6 +35,7 @@ from agent_framework import (
 
 from axon.brain.classifier import Brain, first_word, get_brain
 from axon.config import Settings, get_settings
+from axon.db import repo
 from axon.hands.base import Hand
 from axon.models import (
     ApprovalOutcome,
@@ -134,10 +135,17 @@ class PrepareExecutor(Executor):
 
 
 class GateExecutor(Executor):
-    """Step four: risky notes stop here and wait for a human. See ADR-0003."""
+    """Step four: risky notes stop here and wait for a human. See ADR-0003.
 
-    def __init__(self, id: str = "gate") -> None:
+    `settings` is only used by `resumed()` (Step 20) to re-read the draft from SQLite
+    at resume time, in case the human edited it before approving -- see that method's
+    docstring for why the response stays a plain bool rather than carrying the edit
+    itself through the checkpoint machinery.
+    """
+
+    def __init__(self, settings: Settings, id: str = "gate") -> None:
         super().__init__(id=id)
+        self._settings = settings
 
     @handler
     async def gate(
@@ -175,11 +183,32 @@ class GateExecutor(Executor):
         approved: bool,
         ctx: WorkflowContext[ApprovalOutcome],
     ) -> None:
+        """Step 20: prefers a freshly-edited draft over the one frozen into the
+        checkpoint when this note first paused.
+
+        Deliberately does NOT change what `request_info`/this method exchange (still a
+        plain bool) -- that would mean a new pydantic type crossing the checkpoint
+        boundary, with its own CHECKPOINT_TYPES registration and its own chance to
+        silently fail to load, for a feature that doesn't need it. Instead, an edit is
+        written straight to the approvals table BEFORE resume_capture is ever called
+        (see axon.service.resolve_approval and repo.update_draft), and this reads it
+        back the same way a hand's execute() re-derives its own work rather than
+        trusting anything carried in memory from an earlier step. get_latest_approval_
+        for_note is safe to call here because exactly one gate exists per note in
+        V1/V2 (ADR-0003) -- there is no ambiguity about which approval row is "this
+        one's".
+        """
+        draft = original_request.draft
+        with repo.open_db(self._settings) as conn:
+            fresh = repo.get_latest_approval_for_note(conn, original_request.note.note_id)
+        if fresh is not None and fresh.draft_body:
+            draft = MessageDraft(subject=fresh.draft_subject, body=fresh.draft_body)
+
         await ctx.send_message(
             ApprovalOutcome(
                 note=original_request.note, approved=approved,
                 detail=original_request.detail, project_dir=original_request.project_dir,
-                push_url=original_request.push_url, draft=original_request.draft,
+                push_url=original_request.push_url, draft=draft,
             )
         )
 
@@ -254,7 +283,7 @@ def build_workflow(
     classify = ClassifyExecutor(brain or get_brain(settings))
     recall = RememberExecutor(remember or (lambda _note: None))
     prepare = PrepareExecutor(resolve_hand)
-    gate = GateExecutor()
+    gate = GateExecutor(settings)
     act = ExecuteExecutor(resolve_hand)
     store = PersistExecutor(persist)
 

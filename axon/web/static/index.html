@@ -449,6 +449,21 @@
   }
   .note-text { flex: 1; min-width: 0; }
   .note-status { color: var(--faint); font-size: 0.76rem; white-space: nowrap; }
+  /* Step 20: distinct from every other status text -- this one means a decision was
+     made (approved) but hasn't run yet, which reads very differently from "still
+     waiting on you" (awaiting_approval) even though both used to look identical. */
+  .note-status.send-scheduled {
+    color: var(--accent-strong);
+    font-weight: 650;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+  }
+  .note-status.send-scheduled::before {
+    content: "";
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent-strong);
+  }
 
   .badge {
     display: inline-flex; align-items: center; gap: 0.35em;
@@ -523,23 +538,43 @@
     background: color-mix(in srgb, var(--accent) 5%, transparent);
     overflow: hidden;
   }
-  .draft-subject {
-    font-size: 0.78rem;
-    font-weight: 650;
-    padding: 0.45em 0.7em;
+  .draft-subject-row {
+    display: flex; align-items: center; gap: 0.4em;
+    padding: 0.4em 0.6em;
     border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--accent) 7%, transparent);
   }
-  .draft-subject span { color: var(--faint); font-weight: 550; }
+  .draft-subject-row span { color: var(--faint); font-size: 0.76rem; font-weight: 550; flex: none; }
+  .draft-subject-input {
+    flex: 1; min-width: 0;
+    border: none; background: transparent; color: var(--text);
+    font-size: 0.78rem; font-weight: 650;
+    padding: 0.15em 0;
+  }
+  .draft-subject-input:focus { outline: none; }
+  /* Step 20: editable, styled to look like the read-only version it replaced until
+     focused -- editing a draft should feel like correcting text, not filling a form. */
   .draft-body {
+    display: block;
+    width: 100%;
     margin: 0;
     padding: 0.6em 0.7em;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
     font-size: 0.82rem;
     line-height: 1.5;
     white-space: pre-wrap;   /* drafts carry real paragraph breaks */
     word-break: break-word;
     max-height: 15em;
+    min-height: 4.5em;
     overflow-y: auto;
+    resize: vertical;
+  }
+  .draft-body:focus {
+    outline: none;
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
   }
   /* Step 19: when to actually send. Only rendered for hands that carry a draft
      (email/WhatsApp/chat) -- GitHub/files still send the instant you approve. */
@@ -788,12 +823,14 @@ async function refreshNotes() {
   }
   el.innerHTML = data.notes.map((note, i) => {
     const due = formatDue(note.due_at);
+    const isScheduled = note.status === "send_scheduled";
+    const statusLabel = isScheduled ? "send scheduled" : note.status;
     return `
       <div class="note-row" style="--i:${i}">
         <span class="note-id">#${note.id}</span>
         <span class="note-text">${escapeHtml(note.text)}${due ? ` <span class="note-status">due ${escapeHtml(due)}</span>` : ""}</span>
         <span class="badge ${escapeHtml(note.kind)}">${escapeHtml(KIND_LABEL[note.kind] ?? note.kind)}</span>
-        <span class="note-status">${escapeHtml(note.status)}</span>
+        <span class="note-status${isScheduled ? " send-scheduled" : ""}">${escapeHtml(statusLabel)}</span>
       </div>`;
   }).join("");
 }
@@ -829,8 +866,14 @@ async function refreshApprovals() {
       ${a.detail ? `<div class="approval-detail">${escapeHtml(a.detail)}</div>` : ""}
       ${a.draft_body ? `
         <div class="draft">
-          ${a.draft_subject ? `<div class="draft-subject"><span>Subject:</span> ${escapeHtml(a.draft_subject)}</div>` : ""}
-          <p class="draft-body">${escapeHtml(a.draft_body)}</p>
+          ${a.draft_subject !== null && a.draft_subject !== undefined ? `
+            <div class="draft-subject-row">
+              <span>Subject:</span>
+              <input type="text" class="draft-subject-input" id="draft-subject-${a.id}"
+                     value="${escapeHtml(a.draft_subject)}" aria-label="Edit subject">
+            </div>` : ""}
+          <textarea class="draft-body" id="draft-body-${a.id}" aria-label="Edit message"
+                    spellcheck="false">${escapeHtml(a.draft_body)}</textarea>
         </div>` : ""}
       ${a.push_url ? `<div class="approval-command">will run: git push ${escapeHtml(a.push_url)}</div>` : ""}
       ${whenChoiceHtml(a)}
@@ -885,8 +928,10 @@ async function resolveApproval(id, approved) {
   if (activeBtn) setButtonBusy(activeBtn, true, approved ? "Approving..." : "Rejecting...");
   if (feedback) { feedback.innerHTML = ""; feedback.classList.remove("error", "ok"); }
 
-  // Only ever consulted for an approve — reject has nothing to schedule.
+  // Only ever consulted for an approve — reject has nothing to schedule or send.
   let sendAt = null;
+  let draftSubject = null;
+  let draftBody = null;
   if (approved) {
     const chosen = document.querySelector(`input[name="when-${id}"]:checked`);
     if (chosen && chosen.value === "later") {
@@ -895,13 +940,20 @@ async function resolveApproval(id, approved) {
         sendAt = new Date(timeInput.value).toISOString();
       }
     }
+    // Step 20: send the textarea's current contents. The API treats an empty
+    // draft_body as "nothing was edited" (see api.py's approve()), so this is safe to
+    // send unconditionally whether or not the human actually changed anything.
+    const bodyInput = document.getElementById(`draft-body-${id}`);
+    if (bodyInput) draftBody = bodyInput.value;
+    const subjectInput = document.getElementById(`draft-subject-${id}`);
+    if (subjectInput) draftSubject = subjectInput.value;
   }
 
   try {
     await api(`/api/approvals/${id}/${approved ? "approve" : "reject"}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ send_at: sendAt }),
+      body: JSON.stringify({ send_at: sendAt, draft_subject: draftSubject, draft_body: draftBody }),
     });
     await Promise.all([refreshApprovals(), refreshNotes(), refreshDoctor()]);
   } catch (err) {

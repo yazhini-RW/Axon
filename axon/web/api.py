@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from axon import service
-from axon.models import Note
+from axon.models import MessageDraft, Note
 
 app = FastAPI(
     title="Axon",
@@ -121,6 +121,11 @@ class ApprovalsListResponse(BaseModel):
 class ResolveRequest(BaseModel):
     # Step 19. Absent or null: send now, unchanged from before this field existed.
     send_at: datetime | None = None
+    # Step 20. Absent or null: send the draft exactly as shown, unchanged. draft_body
+    # is only actually applied if non-empty (see approve() below) -- an empty body
+    # here means "nothing was edited", not "send a blank message".
+    draft_subject: str | None = None
+    draft_body: str | None = None
 
 
 class ResolveResponse(BaseModel):
@@ -228,10 +233,15 @@ def list_approvals() -> ApprovalsListResponse:
 
 
 def _resolve(
-    approval_id: int, approved: bool, send_at: datetime | None = None
+    approval_id: int,
+    approved: bool,
+    send_at: datetime | None = None,
+    edited_draft: MessageDraft | None = None,
 ) -> ResolveResponse:
     try:
-        result = service.resolve_approval(approval_id, approved, send_at=send_at)
+        result = service.resolve_approval(
+            approval_id, approved, send_at=send_at, edited_draft=edited_draft
+        )
     except service.ApprovalNotFound as exc:
         raise HTTPException(status_code=404, detail=f"no approval #{approval_id}") from exc
     except service.ApprovalAlreadyResolved as exc:
@@ -256,9 +266,15 @@ def _resolve(
 
 @app.post("/api/approvals/{approval_id}/approve", response_model=ResolveResponse)
 def approve(approval_id: int, body: ResolveRequest | None = None) -> ResolveResponse:
-    # Step 19: body is optional so an old client (or a plain curl with no JSON) still
-    # behaves exactly as before -- send now.
-    return _resolve(approval_id, approved=True, send_at=body.send_at if body else None)
+    # Step 19/20: body is optional so an old client (or a plain curl with no JSON)
+    # still behaves exactly as before -- send now, draft unedited.
+    edited_draft = None
+    if body and body.draft_body:  # empty body means "nothing was edited", not "send blank"
+        edited_draft = MessageDraft(subject=body.draft_subject, body=body.draft_body)
+    return _resolve(
+        approval_id, approved=True, send_at=body.send_at if body else None,
+        edited_draft=edited_draft,
+    )
 
 
 @app.post("/api/approvals/{approval_id}/reject", response_model=ResolveResponse)

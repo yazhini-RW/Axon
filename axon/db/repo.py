@@ -357,6 +357,32 @@ def schedule_approval(conn: sqlite3.Connection, approval_id: int, *, scheduled_f
     )
 
 
+def update_draft(
+    conn: sqlite3.Connection, approval_id: int, *, subject: str | None, body: str
+) -> None:
+    """Step 20: the human edited the drafted message before approving. Written here
+    BEFORE resume_capture runs, so GateExecutor.resumed() reads the edit back out at
+    resume time rather than sending whatever was frozen into the checkpoint when the
+    note first paused. See axon.brain.workflow's GateExecutor for the read side."""
+    conn.execute(
+        "UPDATE approvals SET draft_subject = ?, draft_body = ? WHERE id = ?",
+        (subject, body, approval_id),
+    )
+
+
+def get_latest_approval_for_note(conn: sqlite3.Connection, note_id: int) -> Approval | None:
+    """The approval currently in flight for this note, whatever its status. Exactly
+    one gate exists per note in V1/V2 (see ADR-0003), so "most recent by id" is
+    unambiguous -- this is how GateExecutor.resumed() finds the freshest draft rather
+    than trusting the one frozen into the paused checkpoint."""
+    row = conn.execute(
+        "SELECT a.*, n.text AS note_text, n.due_at AS note_due_at FROM approvals a "
+        "JOIN notes n ON n.id = a.note_id WHERE a.note_id = ? ORDER BY a.id DESC LIMIT 1",
+        (note_id,),
+    ).fetchone()
+    return _row_to_approval(row) if row else None
+
+
 def resolve_approval(conn: sqlite3.Connection, approval_id: int, *, approved: bool) -> None:
     conn.execute(
         "UPDATE approvals SET status = ?, resolved_at = ? WHERE id = ?",

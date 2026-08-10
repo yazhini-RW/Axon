@@ -231,16 +231,26 @@ def _parse_send_at(at: str | None) -> datetime | None:
 
 
 def _resolve(
-    approval_id: int, approved: bool, *, send_at: datetime | None = None
+    approval_id: int,
+    approved: bool,
+    *,
+    send_at: datetime | None = None,
+    edited_body: str | None = None,
+    edited_subject: str | None = None,
 ) -> None:
     """Shared by `approve` and `reject`: resume a paused workflow with the answer.
 
     This can run in a completely different process than the one that paused it — the
     whole point is that it does not need to. See ADR-0001 and ADR-0003.
     """
+    from axon.models import MessageDraft
+
+    edited_draft = MessageDraft(subject=edited_subject, body=edited_body) if edited_body else None
     try:
         with console.status("[dim]resuming...[/dim]"):
-            result = service.resolve_approval(approval_id, approved, send_at=send_at)
+            result = service.resolve_approval(
+                approval_id, approved, send_at=send_at, edited_draft=edited_draft
+            )
     except service.ApprovalNotFound:
         console.print(f"[red]no approval #{approval_id}[/red]")
         raise typer.Exit(code=1) from None
@@ -279,10 +289,20 @@ def approve(
         None, "--at",
         help='When to actually send, e.g. "tomorrow 3pm". Omit to send now.',
     ),
+    body: str = typer.Option(
+        None, "--body",
+        help="Send this instead of the drafted message. Only applies to hands that draft one.",
+    ),
+    subject: str = typer.Option(
+        None, "--subject", help="Send this subject instead of the drafted one (email only).",
+    ),
 ) -> None:
     """Give the OK to a paused, risky action. `--at` schedules it instead of sending
     immediately -- the message doesn't go out until axon run reaches that time."""
-    _resolve(approval_id, approved=True, send_at=_parse_send_at(at))
+    _resolve(
+        approval_id, approved=True, send_at=_parse_send_at(at),
+        edited_body=body, edited_subject=subject,
+    )
 
 
 @app.command()

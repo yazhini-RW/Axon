@@ -18,7 +18,7 @@ from datetime import datetime
 
 from axon.config import Settings, get_settings
 from axon.db import repo
-from axon.models import ApprovalOutcome, ClassifiedNote, Note, NoteStatus, utcnow
+from axon.models import ApprovalOutcome, ClassifiedNote, MessageDraft, Note, NoteStatus, utcnow
 from axon.memory.store import MemoryLocked, Recollection
 
 __all__ = [
@@ -234,6 +234,7 @@ def resolve_approval(
     settings: Settings | None = None,
     *,
     send_at: datetime | None = None,
+    edited_draft: MessageDraft | None = None,
 ) -> ResolveResult:
     """Approve or reject a paused note.
 
@@ -243,6 +244,12 @@ def resolve_approval(
     leaves the checkpoint paused; nothing runs until fire_scheduled_approvals() (called
     from the reminder daemon's sync loop) resumes it at that time. A reject is never
     scheduled -- there is nothing to wait for.
+
+    `edited_draft` (Step 20) is written to the approvals row BEFORE the workflow is
+    ever resumed -- including before scheduling, since a scheduled approval may not
+    resume for hours, and nobody will be there to supply the edit again at that point.
+    GateExecutor.resumed() reads it back out of the same row at whatever time the
+    workflow actually resumes. See repo.update_draft.
 
     Raises ApprovalNotFound / ApprovalAlreadyResolved, or ApprovalExecutionFailed if a
     hand's execute() raised (e.g. GitHubHand.execute() with no GITHUB_USERNAME set) —
@@ -257,8 +264,14 @@ def resolve_approval(
         if approval.status != "pending":
             raise ApprovalAlreadyResolved(approval.status)
 
+        if approved and edited_draft is not None:
+            repo.update_draft(
+                conn, approval_id, subject=edited_draft.subject, body=edited_draft.body
+            )
+
         if approved and send_at is not None and send_at > utcnow():
             repo.schedule_approval(conn, approval_id, scheduled_for=send_at)
+            repo.set_status(conn, approval.note_id, NoteStatus.SEND_SCHEDULED)
             # The checkpoint stays paused on purpose -- see list_scheduled_approvals'
             # docstring for why it must be kept alive here rather than swept.
             keep = {a.checkpoint_id for a in repo.list_pending_approvals(conn)}

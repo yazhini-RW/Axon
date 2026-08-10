@@ -28,6 +28,11 @@ class NoteStatus(str, Enum):
     CLASSIFIED = "classified"        # the brain has worked out what it is
     SCHEDULED = "scheduled"          # a reminder with a job waiting to fire
     AWAITING_APPROVAL = "awaiting_approval"  # paused, needs a human OK
+    # Step 19: the human already said yes to a sending hand's message, but chose a
+    # later time -- distinct from SCHEDULED (that's the reminder daemon's own concept,
+    # a notification waiting to fire) and from AWAITING_APPROVAL (a decision has been
+    # made here; that one hasn't). Reverts to CLASSIFIED once the send actually runs.
+    SEND_SCHEDULED = "send_scheduled"
     DONE = "done"
     MISSED = "missed"                # was due so long ago that firing it would be noise
     BLOCKED = "blocked"              # the human said no

@@ -27,8 +27,9 @@ import re
 
 import httpx
 
+from axon.brain.drafter import Drafter, get_drafter
 from axon.config import Settings, get_settings
-from axon.models import ApprovalOutcome, ClassifiedNote, PreparedNote
+from axon.models import ApprovalOutcome, ClassifiedNote, MessageDraft, PreparedNote
 
 GRAPH_VERSION = "v21.0"
 
@@ -65,11 +66,17 @@ def _draft(text: str) -> str:
 class WhatsAppHand:
     """`prepare`: draft locally. `execute`: real Cloud API send, only once approved."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self, settings: Settings | None = None, drafter: Drafter | None = None
+    ) -> None:
         self._settings = settings or get_settings()
+        self._drafter = drafter or get_drafter(self._settings)
 
     async def prepare(self, note: ClassifiedNote) -> PreparedNote:
-        message = _draft(note.text)
+        draft = await self._drafter.draft(
+            note.text, "chat", MessageDraft(body=_draft(note.text))
+        )
+        message = draft.body
         to = self._settings.whatsapp_to
         # Only the last 4 digits: this string goes into the approvals table and onto the
         # web UI, and the full number doesn't need to be either place to confirm intent.
@@ -77,6 +84,7 @@ class WhatsAppHand:
         return PreparedNote(
             note=note,
             detail=f"whatsapp ready — to: {where}, message: {message!r}",
+            draft=draft,
         )
 
     async def execute(self, outcome: ApprovalOutcome) -> None:
@@ -103,7 +111,8 @@ class WhatsAppHand:
                 "The draft is safe; set them and re-approve."
             )
 
-        message = _draft(outcome.note.text)
+        # The approved draft, not a re-derivation -- see MessageDraft's docstring.
+        message = outcome.draft.body if outcome.draft else _draft(outcome.note.text)
         url = (
             f"https://graph.facebook.com/{GRAPH_VERSION}/"
             f"{settings.whatsapp_phone_number_id}/messages"

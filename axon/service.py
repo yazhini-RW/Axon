@@ -156,6 +156,8 @@ def add_note(
                 detail=pending.request.detail,
                 project_dir=pending.request.project_dir,
                 push_url=pending.request.push_url,
+                draft_subject=pending.request.draft.subject if pending.request.draft else None,
+                draft_body=pending.request.draft.body if pending.request.draft else None,
             )
             classification = pending.request.note.classification
             repo.apply_classification(

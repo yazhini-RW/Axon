@@ -42,6 +42,7 @@ from axon.models import (
     Classification,
     ClassifiedNote,
     ClassifyRequest,
+    MessageDraft,
     NoteKind,
     PreparedNote,
 )
@@ -58,6 +59,11 @@ CHECKPOINT_TYPES = [
     for model in (
         ClassifyRequest, ClassifiedNote, Classification, PreparedNote,
         ApprovalRequest, ApprovalOutcome, NoteKind,
+        # Step 18: nested inside PreparedNote/ApprovalRequest/ApprovalOutcome. Nested
+        # models need registering in their own right -- the same trap NoteKind hit,
+        # where a missing entry produced a silently empty list_checkpoints() rather
+        # than an error.
+        MessageDraft,
     )
 ] + [
     # A reminder's due_at is a timezone-aware datetime, and the parser attaches a real
@@ -146,7 +152,7 @@ class GateExecutor(Executor):
                 ApprovalOutcome(
                     note=prepared.note, approved=True,
                     detail=prepared.detail, project_dir=prepared.project_dir,
-                    push_url=prepared.push_url,
+                    push_url=prepared.push_url, draft=prepared.draft,
                 )
             )
             return
@@ -157,6 +163,7 @@ class GateExecutor(Executor):
                 detail=prepared.detail,
                 project_dir=prepared.project_dir,
                 push_url=prepared.push_url,
+                draft=prepared.draft,
             ),
             bool,
         )
@@ -172,7 +179,7 @@ class GateExecutor(Executor):
             ApprovalOutcome(
                 note=original_request.note, approved=approved,
                 detail=original_request.detail, project_dir=original_request.project_dir,
-                push_url=original_request.push_url,
+                push_url=original_request.push_url, draft=original_request.draft,
             )
         )
 

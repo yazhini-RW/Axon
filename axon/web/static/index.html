@@ -514,6 +514,33 @@
     padding: 0.5em 0.65em;
     word-break: break-all;
   }
+  /* Step 18: the message itself, shown verbatim. This is the thing being approved, so
+     it gets the visual weight of content rather than of a status line. */
+  .draft {
+    margin-top: 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+    overflow: hidden;
+  }
+  .draft-subject {
+    font-size: 0.78rem;
+    font-weight: 650;
+    padding: 0.45em 0.7em;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  .draft-subject span { color: var(--faint); font-weight: 550; }
+  .draft-body {
+    margin: 0;
+    padding: 0.6em 0.7em;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    white-space: pre-wrap;   /* drafts carry real paragraph breaks */
+    word-break: break-word;
+    max-height: 15em;
+    overflow-y: auto;
+  }
   .approval-actions { display: flex; gap: 0.5rem; margin-top: 0.85rem; }
   .approval-actions button { flex: 1; padding: 0.58rem 0.9rem; font-size: 0.85rem; }
 
@@ -778,6 +805,11 @@ async function refreshApprovals() {
         <span class="approval-action"><span class="verb">${escapeHtml(a.action)}</span>#${a.note_id} ${escapeHtml(a.note_text)}</span>
       </div>
       ${a.detail ? `<div class="approval-detail">${escapeHtml(a.detail)}</div>` : ""}
+      ${a.draft_body ? `
+        <div class="draft">
+          ${a.draft_subject ? `<div class="draft-subject"><span>Subject:</span> ${escapeHtml(a.draft_subject)}</div>` : ""}
+          <p class="draft-body">${escapeHtml(a.draft_body)}</p>
+        </div>` : ""}
       ${a.push_url ? `<div class="approval-command">will run: git push ${escapeHtml(a.push_url)}</div>` : ""}
       <div class="approval-actions">
         <button class="approve-btn" data-id="${a.id}"><span class="btn-label">Approve</span></button>

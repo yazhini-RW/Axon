@@ -198,6 +198,19 @@ def approvals() -> None:
             str(approval.id), f"[yellow]{approval.action}[/yellow]", approval.note_text, command
         )
     console.print(table)
+
+    # Step 18: the drafted message, printed in full under the table. It is the thing
+    # being approved, and squeezing it into a table cell would truncate exactly the
+    # part the human needs to read.
+    for approval in pending:
+        if not approval.draft_body:
+            continue
+        console.print(f"\n[dim]#{approval.id} will send:[/dim]")
+        if approval.draft_subject:
+            console.print(f"  [bold]Subject:[/bold] {approval.draft_subject}")
+        for line in approval.draft_body.splitlines():
+            console.print(f"  [dim]{line}[/dim]" if line else "")
+
     console.print("\n[dim]axon approve <#>  or  axon reject <#>[/dim]")
 
 

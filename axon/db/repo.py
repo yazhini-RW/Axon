@@ -19,7 +19,7 @@ from pathlib import Path
 from axon.config import Settings, get_settings
 from axon.models import Note, NoteKind, NoteStatus, utcnow
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS notes (
@@ -59,6 +59,14 @@ _SCHEMA_V3 = """
 ALTER TABLE approvals ADD COLUMN detail TEXT;
 ALTER TABLE approvals ADD COLUMN project_dir TEXT;
 ALTER TABLE approvals ADD COLUMN push_url TEXT;
+"""
+
+# Step 18: the actual message a sending hand will deliver, so `axon approvals` and the
+# web UI can show the human the real thing rather than a truncated summary of it. NULL
+# for every hand that doesn't send a message.
+_SCHEMA_V4 = """
+ALTER TABLE approvals ADD COLUMN draft_subject TEXT;
+ALTER TABLE approvals ADD COLUMN draft_body TEXT;
 """
 
 
@@ -135,9 +143,11 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.executescript(_SCHEMA_V1)  # CREATE TABLE IF NOT EXISTS: safe if raced
     if version < 2:
         conn.executescript(_SCHEMA_V2)  # same
-    if version < 3:
+    for target, script in ((3, _SCHEMA_V3), (4, _SCHEMA_V4)):
+        if version >= target:
+            continue
         try:
-            conn.executescript(_SCHEMA_V3)
+            conn.executescript(script)
         except sqlite3.OperationalError as exc:
             # ALTER TABLE ADD COLUMN has no "IF NOT EXISTS" in SQLite, unlike V1/V2's
             # CREATE TABLE. Two connections can both read version < 3 and both try
@@ -242,6 +252,8 @@ class Approval:
     detail: str = ""
     project_dir: str | None = None
     push_url: str | None = None
+    draft_subject: str | None = None
+    draft_body: str | None = None
 
 
 def create_approval(
@@ -254,14 +266,16 @@ def create_approval(
     detail: str = "",
     project_dir: str | None = None,
     push_url: str | None = None,
+    draft_subject: str | None = None,
+    draft_body: str | None = None,
 ) -> int:
     cur = conn.execute(
         "INSERT INTO approvals "
         "(note_id, request_id, checkpoint_id, action, status, created_at, "
-        " detail, project_dir, push_url) "
-        "VALUES (?,?,?,?, 'pending', ?, ?, ?, ?)",
+        " detail, project_dir, push_url, draft_subject, draft_body) "
+        "VALUES (?,?,?,?, 'pending', ?, ?, ?, ?, ?, ?)",
         (note_id, request_id, checkpoint_id, action, _to_db(utcnow()),
-         detail, project_dir, push_url),
+         detail, project_dir, push_url, draft_subject, draft_body),
     )
     return cur.lastrowid
 
@@ -278,6 +292,8 @@ def _row_to_approval(row: sqlite3.Row) -> Approval:
         detail=row["detail"] or "",
         project_dir=row["project_dir"],
         push_url=row["push_url"],
+        draft_subject=row["draft_subject"],
+        draft_body=row["draft_body"],
     )
 
 

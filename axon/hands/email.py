@@ -15,8 +15,13 @@ import re
 import smtplib
 from email.message import EmailMessage
 
+from axon.brain.drafter import Drafter, get_drafter
 from axon.config import Settings, get_settings
-from axon.models import ApprovalOutcome, ClassifiedNote, PreparedNote
+from axon.models import ApprovalOutcome, ClassifiedNote, MessageDraft, PreparedNote
+
+# Appended to every outgoing body, whoever drafted it. Honest disclosure that a program
+# sent this, and kept out of the drafter so a model cannot quietly drop it.
+SIGNATURE = "\n\n-- \nSent by Axon on your behalf, after your approval."
 
 # A note routes to EmailHand only if it both mentions emailing AND contains an actual
 # address to send to — "the office wifi password is on the whiteboard" or "my email is
@@ -67,21 +72,33 @@ def _draft(text: str) -> tuple[str, str, str]:
     if len(words) > 8:
         subject += "..."
 
-    body = f"{text}\n\n-- \nSent by Axon on your behalf, after your approval."
+    # Without the signature: prepare() appends it after drafting, so the body carried
+    # through the checkpoint is byte-for-byte the body that reaches the inbox.
+    body = text
     return recipient, subject, body
 
 
 class EmailHand:
     """`prepare`: draft locally. `execute`: real SMTP send, only once approved."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self, settings: Settings | None = None, drafter: Drafter | None = None
+    ) -> None:
         self._settings = settings or get_settings()
+        self._drafter = drafter or get_drafter(self._settings)
 
     async def prepare(self, note: ClassifiedNote) -> PreparedNote:
-        recipient, subject, _body = _draft(note.text)
+        recipient, subject, body = _draft(note.text)
+        draft = await self._drafter.draft(
+            note.text, "email", MessageDraft(subject=subject, body=body)
+        )
+        # The signature goes on here rather than in the drafter, so the body carried
+        # through the checkpoint is exactly the body that reaches the inbox.
+        draft = draft.model_copy(update={"body": draft.body + SIGNATURE})
         return PreparedNote(
             note=note,
-            detail=f"draft ready — to: {recipient}, subject: {subject!r}",
+            detail=f"draft ready — to: {recipient}, subject: {draft.subject!r}",
+            draft=draft,
         )
 
     async def execute(self, outcome: ApprovalOutcome) -> None:
@@ -94,6 +111,14 @@ class EmailHand:
         """
         note = outcome.note
         recipient, subject, body = _draft(note.text)
+        # Prefer the approved draft over re-deriving. Re-derivation is safe only when
+        # deterministic; a Gemini-written draft is not, so sending a fresh one would
+        # send something the human never saw. See MessageDraft's docstring.
+        if outcome.draft is not None:
+            subject = outcome.draft.subject or subject
+            body = outcome.draft.body
+        else:
+            body += SIGNATURE
 
         if not self._settings.email_address or not self._settings.email_app_password:
             raise RuntimeError(

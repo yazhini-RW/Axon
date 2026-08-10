@@ -105,6 +105,10 @@ class ApprovalOut(BaseModel):
     detail: str
     project_dir: str | None
     push_url: str | None
+    # Step 18: the message itself, for the hands that send one. The UI shows this
+    # verbatim so the human approves what will actually be delivered, not a summary.
+    draft_subject: str | None = None
+    draft_body: str | None = None
 
 
 class ApprovalsListResponse(BaseModel):
@@ -206,6 +210,7 @@ def list_approvals() -> ApprovalsListResponse:
             ApprovalOut(
                 id=a.id, note_id=a.note_id, action=a.action, note_text=a.note_text,
                 detail=a.detail, project_dir=a.project_dir, push_url=a.push_url,
+                draft_subject=a.draft_subject, draft_body=a.draft_body,
             )
             for a in pending
         ]

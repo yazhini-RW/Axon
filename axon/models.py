@@ -87,6 +87,35 @@ class GeminiVerdict(BaseModel):
     reason: str = ""
 
 
+class MessageDraft(BaseModel):
+    """The actual message a sending hand will deliver, written before the gate.
+
+    Step 18. Exists so the human approves *the message itself*, not a one-line summary
+    of it — and, critically, so `execute()` sends exactly what was on screen. Every
+    other hand re-derives its work from the note text at execute time (see
+    GitHubHand.execute's docstring), which is safe only because that derivation is
+    deterministic. Drafting with an LLM is not: re-deriving would send a different
+    message than the one approved. So the draft rides through the checkpoint instead.
+
+    `subject` is None for channels that have no such thing (WhatsApp, chat).
+    """
+
+    body: str
+    subject: str | None = None
+
+
+class DraftVerdict(BaseModel):
+    """The shape the LLM is asked to return, before it becomes a MessageDraft.
+
+    Separate from MessageDraft for the same reason GeminiVerdict is separate from
+    Classification: structured output is easier to get right with plain required
+    fields, so `subject` is an empty string here rather than a nullable one.
+    """
+
+    subject: str = ""
+    body: str = ""
+
+
 class ClassifyRequest(BaseModel):
     """Goes into the workflow."""
 
@@ -116,6 +145,8 @@ class PreparedNote(BaseModel):
     # NoopHand — `execute` checks this before doing anything push-shaped.
     project_dir: str | None = None
     push_url: str | None = None
+    # Step 18. Set by the sending hands (email/whatsapp/chat); None for the rest.
+    draft: MessageDraft | None = None
 
 
 class ApprovalRequest(BaseModel):
@@ -138,6 +169,7 @@ class ApprovalRequest(BaseModel):
     detail: str = ""
     project_dir: str | None = None
     push_url: str | None = None
+    draft: MessageDraft | None = None
 
 
 class ApprovalOutcome(BaseModel):
@@ -158,3 +190,4 @@ class ApprovalOutcome(BaseModel):
     detail: str = ""
     project_dir: str | None = None
     push_url: str | None = None
+    draft: MessageDraft | None = None

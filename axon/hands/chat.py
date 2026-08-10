@@ -15,8 +15,9 @@ import re
 
 import httpx
 
+from axon.brain.drafter import Drafter, get_drafter
 from axon.config import Settings, get_settings
-from axon.models import ApprovalOutcome, ClassifiedNote, PreparedNote
+from axon.models import ApprovalOutcome, ClassifiedNote, MessageDraft, PreparedNote
 
 # A note routes to ChatHand if it names a platform, or uses one of the "tell/message/
 # notify the team" phrasings that clearly mean "post this somewhere for people to see."
@@ -45,12 +46,19 @@ def _draft(text: str) -> str:
 class ChatHand:
     """`prepare`: draft locally. `execute`: real webhook post, only once approved."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self, settings: Settings | None = None, drafter: Drafter | None = None
+    ) -> None:
         self._settings = settings or get_settings()
+        self._drafter = drafter or get_drafter(self._settings)
 
     async def prepare(self, note: ClassifiedNote) -> PreparedNote:
-        message = _draft(note.text)
-        return PreparedNote(note=note, detail=f"chat message ready: {message!r}")
+        draft = await self._drafter.draft(
+            note.text, "chat", MessageDraft(body=_draft(note.text))
+        )
+        return PreparedNote(
+            note=note, detail=f"chat message ready: {draft.body!r}", draft=draft
+        )
 
     async def execute(self, outcome: ApprovalOutcome) -> None:
         """The risky half. Only ever called with an approved outcome — see
@@ -66,7 +74,8 @@ class ChatHand:
                 "The draft is safe; set it and re-approve."
             )
 
-        message = _draft(outcome.note.text)
+        # The approved draft, not a re-derivation -- see MessageDraft's docstring.
+        message = outcome.draft.body if outcome.draft else _draft(outcome.note.text)
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 self._settings.chat_webhook_url, json={"text": message}, timeout=10.0

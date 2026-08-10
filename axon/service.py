@@ -112,9 +112,27 @@ class DoctorInfo:
 def _persist_into(conn):
     def persist(outcome: ApprovalOutcome) -> None:
         result = outcome.note
-        status = NoteStatus.CLASSIFIED if outcome.approved else NoteStatus.BLOCKED
+        classification = result.classification
+        if not outcome.approved:
+            status = NoteStatus.BLOCKED
+        elif classification.due_at is not None and outcome.draft is not None:
+            # Step 20 fix, narrowly scoped: outcome.draft is only ever set by a
+            # message-sending hand (email/WhatsApp/chat -- see MessageDraft's
+            # docstring), never by NoopHand. That distinction matters here: a PLAIN
+            # reminder like "buy milk at 5pm" has due_at set too, but its entire
+            # purpose IS the reminder notification -- it must stay CLASSIFIED/
+            # SCHEDULED so pending_reminders() picks it up and actually fires at 5pm.
+            # Checking due_at alone would have silently broken that (caught before
+            # shipping, not after). Only when a real send already happened is the
+            # due_at-driven notification now redundant noise on top of a message that
+            # already went out -- DONE is what fire() itself sets a genuine reminder
+            # to once it has fired, so this reuses that same "nothing left to remind
+            # about" meaning rather than inventing a new status for the same idea.
+            status = NoteStatus.DONE
+        else:
+            status = NoteStatus.CLASSIFIED
         repo.apply_classification(
-            conn, result.note_id, result.classification.kind, result.classification.due_at,
+            conn, result.note_id, classification.kind, classification.due_at,
             status=status,
         )
 

@@ -34,6 +34,13 @@
     --aurora-1: rgba(61, 143, 102, 0.20);
     --aurora-2: rgba(84, 160, 190, 0.16);
     --aurora-3: rgba(196, 160, 90, 0.14);
+    /* the whiteboard (Notes as a corkboard of post-its) */
+    --board: #e7ebe1;
+    --board-line: #d5dbc9;
+    --postit-blue: #cfe6ff;      --postit-blue-ink: #1c3a52;
+    --postit-yellow: #fff2a8;    --postit-yellow-ink: #4a3c05;
+    --postit-pink: #f4d4e4;      --postit-pink-ink: #4a2036;
+    --postit-grey: #e4e2da;      --postit-grey-ink: #3a382f;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -64,6 +71,12 @@
       --aurora-1: rgba(79, 166, 121, 0.20);
       --aurora-2: rgba(84, 160, 190, 0.16);
       --aurora-3: rgba(196, 160, 90, 0.12);
+      --board: #1a2019;
+      --board-line: #2a3227;
+      --postit-blue: #294a63;      --postit-blue-ink: #cfe6ff;
+      --postit-yellow: #6b5a12;    --postit-yellow-ink: #fff2c2;
+      --postit-pink: #5c3049;      --postit-pink-ink: #f4d4e4;
+      --postit-grey: #3a3d35;      --postit-grey-ink: #e4e2da;
     }
   }
   :root[data-theme="dark"] {
@@ -76,6 +89,11 @@
     --warn: #d8ab5f; --warn-soft: rgba(216,171,95,0.13);
     --fact: #7db3e0; --task: #d8ab5f; --reminder: #b592e0;
     --aurora-1: rgba(79,166,121,0.20); --aurora-2: rgba(84,160,190,0.16); --aurora-3: rgba(196,160,90,0.12);
+    --board: #1a2019; --board-line: #2a3227;
+    --postit-blue: #294a63; --postit-blue-ink: #cfe6ff;
+    --postit-yellow: #6b5a12; --postit-yellow-ink: #fff2c2;
+    --postit-pink: #5c3049; --postit-pink-ink: #f4d4e4;
+    --postit-grey: #3a3d35; --postit-grey-ink: #e4e2da;
   }
   :root[data-theme="light"] {
     --bg: #f4f6f3; --bg-2: #eaf0ea; --panel: rgba(255,255,255,0.82); --panel-solid: #ffffff;
@@ -87,6 +105,11 @@
     --warn: #a4762a; --warn-soft: rgba(212,160,62,0.14);
     --fact: #2f6f9e; --task: #a4762a; --reminder: #7a4f9e;
     --aurora-1: rgba(61,143,102,0.20); --aurora-2: rgba(84,160,190,0.16); --aurora-3: rgba(196,160,90,0.14);
+    --board: #e7ebe1; --board-line: #d5dbc9;
+    --postit-blue: #cfe6ff; --postit-blue-ink: #1c3a52;
+    --postit-yellow: #fff2a8; --postit-yellow-ink: #4a3c05;
+    --postit-pink: #f4d4e4; --postit-pink-ink: #4a2036;
+    --postit-grey: #e4e2da; --postit-grey-ink: #3a382f;
   }
 
   * { box-sizing: border-box; }
@@ -428,33 +451,134 @@
     from { opacity: 0; transform: translateY(10px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-  .note-row, .approval, .recall-hit {
+  .approval, .recall-hit {
     animation: riseIn 0.42s cubic-bezier(0.2, 0.7, 0.3, 1) both;
     animation-delay: calc(var(--i, 0) * 45ms);
   }
 
+  /* --- the whiteboard: Notes as a corkboard of post-its ------------------------- */
+  /* Slight per-position rotation via nth-child, not random JS, so a refresh never
+     makes the board "jitter" -- the same note always sits at the same tilt. */
+
+  #notes-section {
+    background:
+      radial-gradient(ellipse 500px 260px at 18% -10%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 70%),
+      var(--board);
+    border-color: var(--board-line);
+  }
+  .board-surface {
+    position: relative;
+    border-radius: 14px;
+    padding: 1.4rem 1.3rem 1.7rem;
+    background-image:
+      linear-gradient(var(--board-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--board-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-color: color-mix(in srgb, var(--board) 55%, var(--panel-solid) 45%);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.08), inset 0 0 0 1px var(--board-line);
+  }
+
+  #notes-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 1.15rem 1rem;
+    align-items: start;
+  }
+  @media (max-width: 560px) {
+    #notes-list { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  }
+
+  @keyframes pinDrop {
+    0%   { opacity: 0; transform: translateY(-18px) rotate(var(--tilt, 0deg)) scale(0.9); }
+    60%  { transform: translateY(2px) rotate(var(--tilt, 0deg)) scale(1.02); }
+    100% { opacity: 1; transform: translateY(0) rotate(var(--tilt, 0deg)) scale(1); }
+  }
+
   .note-row {
-    display: flex; align-items: center; gap: 0.7rem;
-    padding: 0.68rem 0.6rem;
-    margin: 0 -0.6rem;
-    border-radius: 11px;
-    border-top: 1px solid var(--border);
-    transition: background 0.2s ease, transform 0.2s cubic-bezier(0.2, 0.7, 0.3, 1);
+    --tilt: -2.5deg;
+    position: relative;
+    display: flex; flex-direction: column; gap: 0.5rem;
+    min-height: 148px;
+    padding: 1.1rem 0.85rem 0.75rem;
+    background: var(--postit);
+    color: var(--postit-ink);
+    border-radius: 3px 3px 8px 8px;
+    box-shadow:
+      0 1px 1px rgba(0,0,0,0.08),
+      0 8px 14px -8px rgba(20, 20, 10, 0.35);
+    transform: rotate(var(--tilt));
+    transform-origin: 50% 0%;
+    animation: pinDrop 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+    transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.3, 1), box-shadow 0.25s ease;
   }
-  .note-row:first-child { border-top: none; }
-  .note-row:hover { background: var(--accent-soft); transform: translateX(3px); }
+  /* deterministic alternating tilt, like real hands pinned these up one at a time */
+  .note-row:nth-child(4n+1) { --tilt: -2.5deg; }
+  .note-row:nth-child(4n+2) { --tilt: 1.8deg; }
+  .note-row:nth-child(4n+3) { --tilt: -1.2deg; }
+  .note-row:nth-child(4n+4) { --tilt: 2.4deg; }
+  .note-row:hover, .note-row:focus-within {
+    transform: rotate(0deg) translateY(-4px) scale(1.035);
+    box-shadow:
+      0 2px 2px rgba(0,0,0,0.1),
+      0 18px 28px -12px rgba(20, 20, 10, 0.45);
+    z-index: 2;
+  }
+  /* the pin: a small drop-shadowed dot at the top edge, colored by kind so the board
+     reads by glance even before you read a word of text */
+  .note-row::before {
+    content: "";
+    position: absolute;
+    top: -7px; left: 50%;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    transform: translateX(-50%);
+    background: radial-gradient(circle at 35% 30%, #fff8, transparent 55%), var(--pin-color, var(--accent));
+    box-shadow: 0 2px 3px rgba(0,0,0,0.3);
+  }
+  /* Colored by the kind badge already inside each row -- :has() reads that instead of
+     needing a second kind-class on the row itself, so the JS's render markup didn't
+     need to change to get a color-coded board. */
+  .note-row:has(.badge.fact)     { --postit: var(--postit-blue);   --postit-ink: var(--postit-blue-ink);   --pin-color: var(--fact); }
+  .note-row:has(.badge.task)     { --postit: var(--postit-yellow); --postit-ink: var(--postit-yellow-ink); --pin-color: var(--task); }
+  .note-row:has(.badge.reminder) { --postit: var(--postit-pink);   --postit-ink: var(--postit-pink-ink);   --pin-color: var(--reminder); }
+  .note-row:has(.badge.unclassified) { --postit: var(--postit-grey); --postit-ink: var(--postit-grey-ink); --pin-color: var(--faint); }
+
   .note-id {
-    color: var(--faint); font-variant-numeric: tabular-nums;
-    min-width: 2em; font-size: 0.82rem; font-weight: 600;
+    color: color-mix(in srgb, var(--postit-ink) 55%, transparent);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.02em;
   }
-  .note-text { flex: 1; min-width: 0; }
-  .note-status { color: var(--faint); font-size: 0.76rem; white-space: nowrap; }
+  .note-text {
+    flex: 1; min-width: 0;
+    font-family: "Segoe Print", "Bradley Hand", "Comic Sans MS", var(--hand-fallback, cursive);
+    font-size: 1.02rem;
+    line-height: 1.32;
+    word-break: break-word;
+  }
+  .note-row .badge {
+    align-self: flex-start;
+    font-size: 0.6rem;
+    background: rgba(255,255,255,0.45);
+    border-color: color-mix(in srgb, var(--postit-ink) 20%, transparent);
+    color: color-mix(in srgb, var(--postit-ink) 88%, transparent);
+  }
+  .note-row .badge::before { background: currentColor; }
+  .note-row .badge[class*="hand-"] {
+    background: transparent;
+    border-style: dashed;
+  }
+  .note-status {
+    color: color-mix(in srgb, var(--postit-ink) 65%, transparent);
+    font-size: 0.72rem; white-space: normal;
+  }
   /* Step 20: distinct from every other status text -- this one means a decision was
      made (approved) but hasn't run yet, which reads very differently from "still
      waiting on you" (awaiting_approval) even though both used to look identical. */
   .note-status.send-scheduled {
-    color: var(--accent-strong);
-    font-weight: 650;
+    color: color-mix(in srgb, var(--postit-ink) 92%, transparent);
+    font-weight: 700;
     display: inline-flex;
     align-items: center;
     gap: 0.35em;
@@ -462,7 +586,7 @@
   .note-status.send-scheduled::before {
     content: "";
     width: 5px; height: 5px; border-radius: 50%;
-    background: var(--accent-strong);
+    background: currentColor;
   }
 
   .badge {
@@ -733,14 +857,16 @@
         <p class="feedback" id="add-feedback"></p>
       </section>
 
-      <section style="--i:1" aria-labelledby="notes-heading">
+      <section id="notes-section" style="--i:1" aria-labelledby="notes-heading">
         <div class="section-head">
           <div class="section-head-left">
             <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M6 4h9l3 3v13H6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 10h6M9 14h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
             <h2 id="notes-heading">Notes</h2>
           </div>
         </div>
-        <div id="notes-list"></div>
+        <div class="board-surface">
+          <div id="notes-list"></div>
+        </div>
       </section>
     </div>
 

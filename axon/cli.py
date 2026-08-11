@@ -15,6 +15,8 @@ from rich.console import Console
 from rich.table import Table
 
 from axon import service
+from axon.config import get_settings
+from axon.db import repo
 from axon.models import Note, NoteKind, utcnow
 
 
@@ -195,9 +197,13 @@ def approvals() -> None:
 
     for approval in pending:
         command = f"git push {approval.push_url}" if approval.push_url else ""
-        table.add_row(
-            str(approval.id), f"[yellow]{approval.action}[/yellow]", approval.note_text, command
-        )
+        # Step 22: a push approval's "wants to" reads as PUSH, not the underlying
+        # note's original action -- distinguishing it from the build step it followed.
+        wants_to = "[bold red]PUSH[/bold red]" if approval.kind == "push" else f"[yellow]{approval.action}[/yellow]"
+        note_label = approval.note_text
+        if approval.kind == "push":
+            note_label = f"{approval.detail}" if approval.detail else f"push {approval.project_dir}"
+        table.add_row(str(approval.id), wants_to, note_label, command)
     console.print(table)
 
     # Step 18: the drafted message, printed in full under the table. It is the thing
@@ -242,8 +248,41 @@ def _resolve(
 
     This can run in a completely different process than the one that paused it — the
     whole point is that it does not need to. See ADR-0001 and ADR-0003.
+
+    Step 22: a 'push' approval (the second gate after a real Claude Code build) has no
+    workflow to resume at all -- see resolve_push_approval's docstring -- so this checks
+    the approval's kind first and routes there instead when it applies.
     """
     from axon.models import MessageDraft
+
+    kind = "action"
+    try:
+        with repo.open_db(get_settings()) as conn:
+            existing = repo.get_approval(conn, approval_id)
+            if existing is not None:
+                kind = existing.kind
+    except Exception:  # noqa: BLE001 - a lookup failure here shouldn't block resolving;
+        pass            # the real call below will surface any actual problem clearly.
+
+    if kind == "push":
+        try:
+            with console.status("[dim]pushing...[/dim]" if approved else "[dim]rejecting...[/dim]"):
+                result = service.resolve_push_approval(approval_id, approved)
+        except service.ApprovalNotFound:
+            console.print(f"[red]no approval #{approval_id}[/red]")
+            raise typer.Exit(code=1) from None
+        except service.ApprovalAlreadyResolved as exc:
+            console.print(f"[yellow]approval #{approval_id} was already {exc.status}[/yellow]")
+            raise typer.Exit(code=1) from None
+        except service.ApprovalExecutionFailed as exc:
+            console.print(f"[red]#{approval_id} failed:[/red] {exc}")
+            console.print(f"[dim]approval #{approval_id} is still pending -- fix and retry[/dim]")
+            raise typer.Exit(code=1) from None
+
+        verb = "pushed" if approved else "rejected -- staying local, never pushed"
+        colour = "green" if approved else "yellow"
+        console.print(f"[{colour}]{verb}[/{colour}] #{approval_id}: {result.note_text}")
+        return
 
     edited_draft = MessageDraft(subject=edited_subject, body=edited_body) if edited_body else None
     try:

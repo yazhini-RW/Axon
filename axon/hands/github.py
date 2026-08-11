@@ -143,6 +143,13 @@ class GitHubHand:
         carried in-memory from prepare(), because this can run in a fresh process after
         a resume (same reason PrepareExecutor/ExecuteExecutor take a HandResolver, not a
         fixed Hand — see Step 8's commit message).
+
+        Step 22: a real Claude Code build stops here, after the local commit, and does
+        NOT push. axon.service creates a second, separate approval right after this
+        returns (see PreparedNote/ApprovalOutcome's detail field, which this leaves as
+        the signal), so the human can look at project_dir on disk before the code ever
+        leaves the machine. The free mock builder has nothing worth a second look at,
+        so it still pushes immediately here, unchanged from before Step 22.
         """
         note = outcome.note
         project_dir = self._project_dir(note)
@@ -166,11 +173,19 @@ class GitHubHand:
                  "commit", "-m", f"Axon (Claude Code): {note.text}"],
                 cwd=project_dir,
             )
+            return  # push is gated separately -- see docstring
 
-        existing_remotes = await _git(["remote"], cwd=project_dir)
-        if "origin" not in existing_remotes.split():
-            await _git(["remote", "add", "origin", push_url], cwd=project_dir)
+        await push_project(project_dir, push_url)
 
-        branch = (await _git(["branch", "--show-current"], cwd=project_dir)).strip() or "master"
 
-        await _git(["push", "-u", "origin", branch], cwd=project_dir)
+async def push_project(project_dir: Path, push_url: str) -> None:
+    """The actual `git push`, on its own so the Step 22 push-approval path (in
+    axon.service) can call exactly this and nothing else -- no build, no commit,
+    just what "approve the push" means."""
+    existing_remotes = await _git(["remote"], cwd=project_dir)
+    if "origin" not in existing_remotes.split():
+        await _git(["remote", "add", "origin", push_url], cwd=project_dir)
+
+    branch = (await _git(["branch", "--show-current"], cwd=project_dir)).strip() or "master"
+
+    await _git(["push", "-u", "origin", branch], cwd=project_dir)

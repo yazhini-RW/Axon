@@ -19,7 +19,7 @@ from pathlib import Path
 from axon.config import Settings, get_settings
 from axon.models import Note, NoteKind, NoteStatus, utcnow
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS notes (
@@ -78,6 +78,19 @@ ALTER TABLE approvals ADD COLUMN draft_body TEXT;
 # checkpoint deleted out from under it before it ever fires. See list_pending_approvals.
 _SCHEMA_V5 = """
 ALTER TABLE approvals ADD COLUMN scheduled_for TEXT;
+"""
+
+# Step 22: a real Claude Code build and its GitHub push are now two separate approvals,
+# not one action that does both. 'action' (the default) is every approval that already
+# existed -- resolving it resumes the paused Agent Framework workflow, same as always.
+# 'push' is new and deliberately NOT tied to any workflow checkpoint: it's created
+# directly by axon.service right after a Claude-built GitHub note's local commit
+# succeeds, specifically so the human can look at project_dir on disk before the code
+# ever leaves the machine. request_id/checkpoint_id are empty strings for a 'push' row
+# (both columns are NOT NULL) -- resolving one never calls resume_capture, so nothing
+# ever reads them. See axon.service.resolve_approval's kind branch.
+_SCHEMA_V6 = """
+ALTER TABLE approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'action';
 """
 
 
@@ -154,7 +167,9 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.executescript(_SCHEMA_V1)  # CREATE TABLE IF NOT EXISTS: safe if raced
     if version < 2:
         conn.executescript(_SCHEMA_V2)  # same
-    for target, script in ((3, _SCHEMA_V3), (4, _SCHEMA_V4), (5, _SCHEMA_V5)):
+    for target, script in (
+        (3, _SCHEMA_V3), (4, _SCHEMA_V4), (5, _SCHEMA_V5), (6, _SCHEMA_V6),
+    ):
         if version >= target:
             continue
         try:
@@ -292,6 +307,9 @@ class Approval:
     # the web UI can pre-fill the "when should this send" field instead of leaving a
     # timed note's own time unused. None for a note with no time in it.
     note_due_at: datetime | None = None
+    # Step 22. "action" (default) or "push" -- see _SCHEMA_V6's comment for what each
+    # means and why a 'push' row carries no real request_id/checkpoint_id.
+    kind: str = "action"
 
 
 def create_approval(
@@ -310,10 +328,26 @@ def create_approval(
     cur = conn.execute(
         "INSERT INTO approvals "
         "(note_id, request_id, checkpoint_id, action, status, created_at, "
-        " detail, project_dir, push_url, draft_subject, draft_body) "
-        "VALUES (?,?,?,?, 'pending', ?, ?, ?, ?, ?, ?)",
+        " detail, project_dir, push_url, draft_subject, draft_body, kind) "
+        "VALUES (?,?,?,?, 'pending', ?, ?, ?, ?, ?, ?, 'action')",
         (note_id, request_id, checkpoint_id, action, _to_db(utcnow()),
          detail, project_dir, push_url, draft_subject, draft_body),
+    )
+    return cur.lastrowid
+
+
+def create_push_approval(
+    conn: sqlite3.Connection, note_id: int, *, project_dir: str, push_url: str, detail: str = "",
+) -> int:
+    """Step 22: the second gate, created right after a Claude-built GitHub note's
+    local commit succeeds. request_id/checkpoint_id are empty strings on purpose --
+    see _SCHEMA_V6's comment. Resolving this never touches resume_capture."""
+    cur = conn.execute(
+        "INSERT INTO approvals "
+        "(note_id, request_id, checkpoint_id, action, status, created_at, "
+        " detail, project_dir, push_url, kind) "
+        "VALUES (?, '', '', 'push', 'pending', ?, ?, ?, ?, 'push')",
+        (note_id, _to_db(utcnow()), detail, project_dir, push_url),
     )
     return cur.lastrowid
 
@@ -334,6 +368,7 @@ def _row_to_approval(row: sqlite3.Row) -> Approval:
         draft_body=row["draft_body"],
         scheduled_for=_from_db(row["scheduled_for"]),
         note_due_at=_from_db(row["note_due_at"]),
+        kind=row["kind"],
     )
 
 

@@ -22,6 +22,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from axon import service
+from axon.config import get_settings
+from axon.db import repo
 from axon.models import MessageDraft, Note
 
 app = FastAPI(
@@ -124,6 +126,14 @@ class ApprovalOut(BaseModel):
     # Step 19: only ever set for a NoteKind.REMINDER note that also sends a message --
     # the UI uses this to pre-fill the "when" field rather than leaving it empty.
     note_due_at: datetime | None = None
+    # Step 22: "action" (default, resumes the paused workflow) or "push" (the second
+    # gate after a real Claude Code build -- approving just runs `git push`).
+    kind: str = "action"
+    # Step 22: true when approving this will run a real Claude Code build rather than
+    # push anything. Sent explicitly rather than letting the UI sniff the detail string
+    # or guess from the note's first word -- "push a github repo..." made the build
+    # gate render as PUSH, exactly backwards from the gate that actually pushes.
+    builds_with_claude: bool = False
 
 
 class ApprovalsListResponse(BaseModel):
@@ -239,13 +249,20 @@ def recall(q: str, limit: int = 5) -> RecallResponse:
 @app.get("/api/approvals", response_model=ApprovalsListResponse)
 def list_approvals() -> ApprovalsListResponse:
     pending = service.list_approvals()
+    # A pending 'action' approval that carries a push_url is a GitHub build; whether
+    # approving it *builds* (Claude) or *builds and pushes in one go* (the free mock)
+    # depends only on the configured builder, which the UI has no other way to know.
+    claude_builder = get_settings().axon_builder == "claude"
     return ApprovalsListResponse(
         approvals=[
             ApprovalOut(
                 id=a.id, note_id=a.note_id, action=a.action, note_text=a.note_text,
                 detail=a.detail, project_dir=a.project_dir, push_url=a.push_url,
                 draft_subject=a.draft_subject, draft_body=a.draft_body,
-                note_due_at=a.note_due_at,
+                note_due_at=a.note_due_at, kind=a.kind,
+                builds_with_claude=(
+                    claude_builder and a.kind == "action" and bool(a.push_url)
+                ),
             )
             for a in pending
         ]
@@ -258,6 +275,38 @@ def _resolve(
     send_at: datetime | None = None,
     edited_draft: MessageDraft | None = None,
 ) -> ResolveResponse:
+    # Step 22: a 'push' approval has no workflow to resume -- see
+    # resolve_push_approval's docstring. Peeking at the row first (best-effort; any
+    # real problem still surfaces from the actual resolve call below) is what routes
+    # push approvals to the right function instead of the normal resume path.
+    kind = "action"
+    try:
+        with repo.open_db(get_settings()) as conn:
+            existing = repo.get_approval(conn, approval_id)
+            if existing is not None:
+                kind = existing.kind
+    except Exception:  # noqa: BLE001
+        pass
+
+    if kind == "push":
+        try:
+            result = service.resolve_push_approval(approval_id, approved)
+        except service.ApprovalNotFound as exc:
+            raise HTTPException(status_code=404, detail=f"no approval #{approval_id}") from exc
+        except service.ApprovalAlreadyResolved as exc:
+            raise HTTPException(
+                status_code=409, detail=f"approval #{approval_id} was already {exc.status}"
+            ) from exc
+        except service.ApprovalExecutionFailed as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"{exc} (approval #{approval_id} is still pending — fix and retry)",
+            ) from exc
+        return ResolveResponse(
+            approval_id=result.approval_id, approved=result.approved, action=result.action,
+            note_text=result.note_text, paused_again=False,
+        )
+
     try:
         result = service.resolve_approval(
             approval_id, approved, send_at=send_at, edited_draft=edited_draft

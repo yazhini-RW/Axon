@@ -662,6 +662,43 @@
     padding: 0.5em 0.65em;
     word-break: break-all;
   }
+  /* Step 22: the second gate -- push what's already built locally, or leave it there.
+     A distinct accent (not the danger-red of a normal risky verb) since this action
+     itself is a step *toward* safety, not the risky one the code already took. */
+  .approval.push-approval {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    background: linear-gradient(180deg, var(--accent-soft) 0%, transparent 120px), var(--panel-solid);
+  }
+  .approval-action .verb.push {
+    color: var(--accent-strong); background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .push-path {
+    margin-top: 0.6rem;
+    padding: 0.6em 0.7em;
+    border: 1px dashed color-mix(in srgb, var(--accent) 35%, var(--border-strong));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
+  }
+  .push-path-label {
+    display: block;
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); font-weight: 650; margin-bottom: 0.3em;
+  }
+  .push-path code {
+    display: block;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--text);
+    word-break: break-all;
+  }
+  .push-path-hint {
+    display: block;
+    margin-top: 0.35em;
+    font-size: 0.72rem;
+    color: var(--accent-strong);
+    font-style: italic;
+  }
   /* Step 18: the message itself, shown verbatim. This is the thing being approved, so
      it gets the visual weight of content rather than of a status line. */
   .draft {
@@ -1004,10 +1041,37 @@ async function refreshApprovals() {
   countEl.hidden = false;
   countEl.innerHTML = `<span class="pulse-dot" aria-hidden="true"></span> <span class="count-pill">${data.approvals.length}</span>`;
 
-  el.innerHTML = data.approvals.map((a, i) => `
+  el.innerHTML = data.approvals.map((a, i) => {
+    if (a.kind === "push") {
+      // Step 22: the second gate. No draft, no when-choice -- this approval means
+      // exactly one thing: push what's already sitting on disk, or leave it there.
+      return `
+        <div class="approval push-approval" data-id="${a.id}" style="--i:${i}">
+          <div class="approval-top">
+            <span class="approval-action"><span class="verb push">PUSH</span>#${a.note_id} ${escapeHtml(a.note_text)}</span>
+          </div>
+          <div class="push-path">
+            <span class="push-path-label">Built locally at:</span>
+            <code>${escapeHtml(a.project_dir || "")}</code>
+            <span class="push-path-hint">open this folder and look before you approve</span>
+          </div>
+          ${a.push_url ? `<div class="approval-command">will run: git push ${escapeHtml(a.push_url)}</div>` : ""}
+          <div class="approval-actions">
+            <button class="approve-btn" data-id="${a.id}"><span class="btn-label">Push to GitHub</span></button>
+            <button class="secondary reject-btn" data-id="${a.id}"><span class="btn-label">Keep local only</span></button>
+          </div>
+          <p class="feedback" id="approval-feedback-${a.id}"></p>
+        </div>`;
+    }
+    // Step 22: when a real Claude Code build is what's being approved, say BUILD --
+    // not the note's own first word. "push a github repo..." made gate 1 render as
+    // PUSH even though approving it only builds and commits locally, which is exactly
+    // backwards from gate 2 and made the two indistinguishable at a glance.
+    const verbLabel = a.builds_with_claude ? "build" : a.action;
+    return `
     <div class="approval" data-id="${a.id}" style="--i:${i}">
       <div class="approval-top">
-        <span class="approval-action"><span class="verb">${escapeHtml(a.action)}</span>#${a.note_id} ${escapeHtml(a.note_text)}</span>
+        <span class="approval-action"><span class="verb">${escapeHtml(verbLabel)}</span>#${a.note_id} ${escapeHtml(a.note_text)}</span>
       </div>
       ${a.detail ? `<div class="approval-detail">${escapeHtml(a.detail)}</div>` : ""}
       ${a.draft_body ? `
@@ -1021,14 +1085,15 @@ async function refreshApprovals() {
           <textarea class="draft-body" id="draft-body-${a.id}" aria-label="Edit message"
                     spellcheck="false">${escapeHtml(a.draft_body)}</textarea>
         </div>` : ""}
-      ${a.push_url ? `<div class="approval-command">will run: git push ${escapeHtml(a.push_url)}</div>` : ""}
+      ${a.push_url && !a.builds_with_claude ? `<div class="approval-command">will run: git push ${escapeHtml(a.push_url)}</div>` : ""}
       ${whenChoiceHtml(a)}
       <div class="approval-actions">
-        <button class="approve-btn" data-id="${a.id}"><span class="btn-label">Approve</span></button>
+        <button class="approve-btn" data-id="${a.id}"><span class="btn-label">${a.builds_with_claude ? "Build it" : "Approve"}</span></button>
         <button class="secondary reject-btn" data-id="${a.id}"><span class="btn-label">Reject</span></button>
       </div>
       <p class="feedback" id="approval-feedback-${a.id}"></p>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 
   el.querySelectorAll(".approve-btn").forEach(btn => btn.addEventListener("click", () => resolveApproval(btn.dataset.id, true)));
   el.querySelectorAll(".reject-btn").forEach(btn => btn.addEventListener("click", () => resolveApproval(btn.dataset.id, false)));

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from axon.config import Settings, get_settings
 from axon.db import repo
@@ -35,6 +36,7 @@ __all__ = [
     "recall",
     "list_approvals",
     "resolve_approval",
+    "resolve_push_approval",
     "fire_scheduled_approvals",
     "doctor_info",
 ]
@@ -339,6 +341,25 @@ def _execute_approval(conn, approval, approved: bool, settings: Settings) -> Res
     keep |= {a.checkpoint_id for a in repo.list_scheduled_approvals(conn)}
     asyncio.run(sweep_checkpoints(settings, keep))
 
+    # Step 22: a real Claude Code build stops at the local commit -- GitHubHand.execute()
+    # returns without pushing (see its docstring). The second gate lives entirely here,
+    # not inside the workflow: create a fresh, separate approval for "push this" right
+    # now, using whatever project_dir/push_url the completed outcome carries. push_url
+    # is only ever set by GitHubHand, and the mock builder already pushed inline inside
+    # execute() (nothing left to gate there) -- axon_builder == 'claude' is what tells
+    # the two apart.
+    outcome = capture.completed
+    if (
+        approved and outcome is not None and outcome.push_url and outcome.project_dir
+        and settings.axon_builder == "claude"
+    ):
+        repo.create_push_approval(
+            conn, approval.note_id,
+            project_dir=outcome.project_dir, push_url=outcome.push_url,
+            detail=f"Claude Code built this at {outcome.project_dir} -- look it over, "
+                   "then approve to push it to GitHub.",
+        )
+
     return ResolveResult(
         approval_id=approval.id,
         approved=approved,
@@ -346,6 +367,44 @@ def _execute_approval(conn, approval, approved: bool, settings: Settings) -> Res
         note_text=approval.note_text,
         paused_again=capture.pending is not None,
     )
+
+
+def resolve_push_approval(
+    approval_id: int, approved: bool, settings: Settings | None = None
+) -> ResolveResult:
+    """Step 22's second gate: approve to actually run `git push`, reject to leave the
+    build sitting on disk forever, never pushed. Deliberately separate from
+    resolve_approval -- a 'push' row carries no real checkpoint (see _SCHEMA_V6), so
+    there is nothing for resume_capture to resume; this only ever runs one git command
+    or none at all.
+    """
+    from axon.hands.github import push_project
+
+    settings = settings or get_settings()
+    with repo.open_db(settings) as conn:
+        approval = repo.get_approval(conn, approval_id)
+        if approval is None:
+            raise ApprovalNotFound(str(approval_id))
+        if approval.kind != "push":
+            raise ValueError(f"approval #{approval_id} is not a push approval")
+        if approval.status != "pending":
+            raise ApprovalAlreadyResolved(approval.status)
+
+        if approved:
+            try:
+                asyncio.run(push_project(Path(approval.project_dir), approval.push_url))
+            except Exception as exc:
+                # Same contract as ApprovalExecutionFailed elsewhere: left 'pending' on
+                # failure, not resolved, so a retry after fixing the problem (e.g. the
+                # repo not existing yet on GitHub) works cleanly rather than losing the
+                # build.
+                raise ApprovalExecutionFailed(str(exc)) from exc
+
+        repo.resolve_approval(conn, approval_id, approved=approved)
+        return ResolveResult(
+            approval_id=approval_id, approved=approved, action="push",
+            note_text=approval.note_text, paused_again=False,
+        )
 
 
 @dataclass

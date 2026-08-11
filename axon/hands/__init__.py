@@ -46,3 +46,24 @@ def pick_hand(text: str, settings=None) -> Hand:
     if looks_like_a_research_note(text):
         return ResearchHand()
     return NoopHand()
+
+
+def hand_label(text: str) -> str | None:
+    """Which hand a note's text routes to, as a short display label for the web UI --
+    None if it wouldn't route anywhere real (NoopHand). Deliberately reuses the exact
+    same predicates pick_hand() checks, in the exact same order, rather than a second
+    hand-picking implementation that could quietly drift out of sync with actual
+    routing. Step 21."""
+    if looks_like_a_github_note(text):
+        return "github"
+    if looks_like_an_email_note(text):
+        return "email"
+    if looks_like_a_chat_note(text):
+        return "chat"
+    if looks_like_a_whatsapp_note(text):
+        return "whatsapp"
+    if looks_like_a_files_note(text):
+        return "files"
+    if looks_like_a_research_note(text):
+        return "research"
+    return None

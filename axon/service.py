@@ -212,6 +212,18 @@ def list_notes(limit: int = 20, settings: Settings | None = None) -> tuple[list[
         return repo.list_notes(conn, limit=limit), repo.count_notes(conn)
 
 
+def list_notes_with_scheduled_for(
+    limit: int = 20, settings: Settings | None = None
+) -> tuple[list[tuple[Note, datetime | None]], int]:
+    """Step 21: the web UI's richer notes view -- which hand a note went to (derived
+    from the note text via the same predicates pick_hand uses, so it's guaranteed
+    consistent with actual routing) plus when it was/is scheduled to send, persisting
+    even after the send has happened. See repo.list_notes_with_scheduled_for."""
+    settings = settings or get_settings()
+    with repo.open_db(settings) as conn:
+        return repo.list_notes_with_scheduled_for(conn, limit=limit), repo.count_notes(conn)
+
+
 # Same thresholds as the CLI used before Step 10 — moved here so both callers agree.
 # See docs/SPEC.md for why these are relative, not absolute (scores bunch 0.4-0.7).
 _NOTHING_RELATED = 0.30

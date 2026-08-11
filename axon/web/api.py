@@ -53,12 +53,24 @@ class NoteOut(BaseModel):
     status: str
     due_at: datetime | None
     created_at: datetime | None
+    # Step 21: which hand this note routes to ("email"/"whatsapp"/"chat"/"github"/
+    # "files"/"research"), None if it wouldn't route anywhere. Derived from the note
+    # text via axon.hands.hand_label -- the same predicates that actually did the
+    # routing, not a second guess at it.
+    hand: str | None = None
+    # Step 21: the most recent approval's scheduled_for, if this note was ever
+    # scheduled -- kept visible even after the send has already happened, since that
+    # column is never cleared on resolve.
+    scheduled_for: datetime | None = None
 
     @classmethod
-    def from_note(cls, note: Note) -> "NoteOut":
+    def from_note(
+        cls, note: Note, *, hand: str | None = None, scheduled_for: datetime | None = None
+    ) -> "NoteOut":
         return cls(
             id=note.id, text=note.text, kind=note.kind.value, status=note.status.value,
             due_at=note.due_at, created_at=note.created_at,
+            hand=hand, scheduled_for=scheduled_for,
         )
 
 
@@ -195,8 +207,16 @@ def add_note(body: AddNoteRequest) -> AddNoteResponse:
 
 @app.get("/api/notes", response_model=NotesListResponse)
 def list_notes(limit: int = 20) -> NotesListResponse:
-    notes, total = service.list_notes(limit=limit)
-    return NotesListResponse(notes=[NoteOut.from_note(n) for n in notes], total=total)
+    from axon.hands import hand_label
+
+    rows, total = service.list_notes_with_scheduled_for(limit=limit)
+    return NotesListResponse(
+        notes=[
+            NoteOut.from_note(note, hand=hand_label(note.text), scheduled_for=scheduled_for)
+            for note, scheduled_for in rows
+        ],
+        total=total,
+    )
 
 
 @app.get("/api/recall", response_model=RecallResponse)

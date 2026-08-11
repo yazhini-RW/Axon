@@ -479,6 +479,15 @@
   .badge.task       { color: var(--task);     background: color-mix(in srgb, var(--task) 13%, transparent);     border-color: color-mix(in srgb, var(--task) 24%, transparent); }
   .badge.reminder   { color: var(--reminder); background: color-mix(in srgb, var(--reminder) 13%, transparent); border-color: color-mix(in srgb, var(--reminder) 24%, transparent); }
   .badge.unclassified { color: var(--faint);  background: color-mix(in srgb, var(--faint) 13%, transparent);    border-color: color-mix(in srgb, var(--faint) 22%, transparent); }
+  /* Step 21: hand badges share one outlined style rather than their own color per
+     hand -- the icon + label already tell them apart, and a filled badge here would
+     visually compete with the kind badge for attention it doesn't need. */
+  .badge[class*="hand-"] {
+    color: var(--accent-strong);
+    background: transparent;
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .badge[class*="hand-"]::before { display: none; }  /* the icon already marks it */
 
   .empty {
     color: var(--faint);
@@ -768,6 +777,10 @@
 
 <script>
 const KIND_LABEL = { unclassified: "unclassified", fact: "fact", task: "task", reminder: "reminder" };
+// Step 21: a small icon per hand so the badge reads at a glance, not just by color.
+const HAND_ICON = {
+  email: "✉", whatsapp: "💬", chat: "💬", github: "⌥", files: "📄", research: "🔎",
+};
 
 const ICON_OK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="icon"><circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ICON_ERROR = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="icon"><circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15"/><path d="M12 7v6M12 16.5v.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
@@ -825,11 +838,18 @@ async function refreshNotes() {
     const due = formatDue(note.due_at);
     const isScheduled = note.status === "send_scheduled";
     const statusLabel = isScheduled ? "send scheduled" : note.status;
+    // Step 21: persists regardless of current status -- scheduled_for is never
+    // cleared once the send actually happens, so this keeps showing "was scheduled
+    // for X" even long after the message went out, not just while still pending.
+    const scheduledLine = note.scheduled_for
+      ? `<span class="note-status">scheduled for ${escapeHtml(formatDue(note.scheduled_for))}</span>`
+      : "";
     return `
       <div class="note-row" style="--i:${i}">
         <span class="note-id">#${note.id}</span>
-        <span class="note-text">${escapeHtml(note.text)}${due ? ` <span class="note-status">due ${escapeHtml(due)}</span>` : ""}</span>
+        <span class="note-text">${escapeHtml(note.text)}${due ? ` <span class="note-status">due ${escapeHtml(due)}</span>` : ""}${scheduledLine ? ` ${scheduledLine}` : ""}</span>
         <span class="badge ${escapeHtml(note.kind)}">${escapeHtml(KIND_LABEL[note.kind] ?? note.kind)}</span>
+        ${note.hand ? `<span class="badge hand-${escapeHtml(note.hand)}">${HAND_ICON[note.hand] || ""} ${escapeHtml(note.hand)}</span>` : ""}
         <span class="note-status${isScheduled ? " send-scheduled" : ""}">${escapeHtml(statusLabel)}</span>
       </div>`;
   }).join("");

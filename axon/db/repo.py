@@ -244,6 +244,26 @@ def list_notes(conn: sqlite3.Connection, limit: int = 20) -> list[Note]:
     return [_row_to_note(r) for r in rows]
 
 
+def list_notes_with_scheduled_for(
+    conn: sqlite3.Connection, limit: int = 20
+) -> list[tuple[Note, datetime | None]]:
+    """Same as list_notes, plus each note's most recent approval's scheduled_for --
+    kept alongside the note itself so the web UI can show "was scheduled for X" even
+    after the send has already happened. That column is never cleared when an approval
+    resolves (see schedule_approval/resolve_approval), so the correlated subquery below
+    finds it whether the approval is still 'scheduled' or long since 'approved'."""
+    rows = conn.execute(
+        """
+        SELECT n.*,
+          (SELECT a.scheduled_for FROM approvals a
+           WHERE a.note_id = n.id ORDER BY a.id DESC LIMIT 1) AS latest_scheduled_for
+        FROM notes n ORDER BY n.id DESC LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [(_row_to_note(r), _from_db(r["latest_scheduled_for"])) for r in rows]
+
+
 def count_notes(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
 

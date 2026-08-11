@@ -326,6 +326,11 @@ def run() -> None:
         console.print(f"  marked [dim]{counts['missed']}[/dim] as missed (more than a day late)")
     if counts.get("sent"):
         console.print(f"  sent [green]{counts['sent']}[/green] scheduled message(s) just now")
+    if counts.get("send_failed"):
+        console.print(
+            f"  [red]{counts['send_failed']} scheduled message(s) failed to send[/red]"
+            " [dim](still scheduled -- will retry; see the toast for why)[/dim]"
+        )
     console.print(f"  watching [bold]{counts['scheduled']}[/bold] reminder(s)")
     console.print(f"[dim]  checking for new notes every {SYNC_SECONDS}s[/dim]")
 

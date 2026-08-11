@@ -96,9 +96,9 @@ def test_an_edit_survives_being_scheduled_for_later(settings: Settings) -> None:
         repo.schedule_approval(conn, approval_id, scheduled_for=utcnow() - timedelta(seconds=1))
 
     with patch.object(EmailHand, "_send") as send:
-        fired = service.fire_scheduled_approvals(settings=settings)
+        result = service.fire_scheduled_approvals(settings=settings)
 
-    assert len(fired) == 1
+    assert len(result.fired) == 1
     message = send.call_args[0][0]
     assert message["Subject"] == "Edited subject"
     assert "Edited body text." in message.get_content()

@@ -67,7 +67,9 @@ def test_facts_and_tasks_are_never_scheduled(settings: Settings, service: Remind
         task = repo.add_note(conn, "fix the login bug")
         repo.apply_classification(conn, task.id, NoteKind.TASK)
 
-    assert service.sync() == {"scheduled": 0, "fired": 0, "missed": 0, "sent": 0}
+    assert service.sync() == {
+        "scheduled": 0, "fired": 0, "missed": 0, "sent": 0, "send_failed": 0,
+    }
     assert service.scheduled_job_ids() == []
 
 

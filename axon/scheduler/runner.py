@@ -65,7 +65,7 @@ class ReminderService:
     def sync(self) -> dict[str, int]:
         """Load anything new from SQLite. Safe to call repeatedly."""
         self._ensure_running()
-        counts = {"scheduled": 0, "fired": 0, "missed": 0, "sent": 0}
+        counts = {"scheduled": 0, "fired": 0, "missed": 0, "sent": 0, "send_failed": 0}
         now = utcnow()
 
         with repo.open_db(self._settings) as conn:
@@ -90,8 +90,19 @@ class ReminderService:
         # never silently dropped -- see fire_scheduled_approvals' docstring.
         from axon import service
 
-        for result in service.fire_scheduled_approvals(self._settings):
-            counts["sent"] += 1
+        result = service.fire_scheduled_approvals(self._settings)
+        counts["sent"] += len(result.fired)
+        counts["send_failed"] += len(result.failed)
+        for approval_id, error in result.failed:
+            # A real Windows toast + console line, same channel overdue reminders
+            # already use -- this is deliberately as loud as a failure that just
+            # silently retried forever for ~10 minutes (found live) needs to be.
+            self._notify(
+                Notification(
+                    title="Axon - scheduled send failed",
+                    body=f"#{approval_id}: {error[:200]}",
+                )
+            )
 
         return counts
 

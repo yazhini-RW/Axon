@@ -129,9 +129,10 @@ def test_fire_scheduled_approvals_ignores_ones_not_due_yet(settings: Settings) -
         approval_id, True, settings=settings, send_at=utcnow() + timedelta(hours=2)
     )
 
-    fired = service.fire_scheduled_approvals(settings=settings)
+    result = service.fire_scheduled_approvals(settings=settings)
 
-    assert fired == []
+    assert result.fired == []
+    assert result.failed == []
     with repo.open_db(settings) as conn:
         assert repo.get_approval(conn, approval_id).status == "scheduled"
 
@@ -139,10 +140,11 @@ def test_fire_scheduled_approvals_ignores_ones_not_due_yet(settings: Settings) -
 def test_fire_scheduled_approvals_runs_a_due_one(settings: Settings) -> None:
     approval_id = _schedule_then_make_it_due(settings)
 
-    fired = service.fire_scheduled_approvals(settings=settings)
+    result = service.fire_scheduled_approvals(settings=settings)
 
-    assert len(fired) == 1
-    assert fired[0].approval_id == approval_id
+    assert len(result.fired) == 1
+    assert result.fired[0].approval_id == approval_id
+    assert result.failed == []
     with repo.open_db(settings) as conn:
         assert repo.get_approval(conn, approval_id).status == "approved"
 
@@ -153,8 +155,8 @@ def test_fire_scheduled_approvals_only_fires_each_one_once(settings: Settings) -
     first = service.fire_scheduled_approvals(settings=settings)
     second = service.fire_scheduled_approvals(settings=settings)
 
-    assert len(first) == 1
-    assert second == []
+    assert len(first.fired) == 1
+    assert second.fired == []
 
 
 def test_a_failing_send_stays_scheduled_for_the_next_attempt(settings: Settings) -> None:
@@ -171,10 +173,35 @@ def test_a_failing_send_stays_scheduled_for_the_next_attempt(settings: Settings)
     original = workflow_module.resume_capture
     workflow_module.resume_capture = boom
     try:
-        fired = service.fire_scheduled_approvals(settings=settings)
+        result = service.fire_scheduled_approvals(settings=settings)
     finally:
         workflow_module.resume_capture = original
 
-    assert fired == []
+    assert result.fired == []
     with repo.open_db(settings) as conn:
         assert repo.get_approval(conn, approval_id).status == "scheduled"
+
+
+def test_a_failing_send_is_reported_not_just_swallowed(settings: Settings) -> None:
+    """The real bug this was built to catch: a scheduled send failing used to be
+    invisible everywhere -- the row just silently stayed 'scheduled' forever with no
+    trace. Found live: a WhatsApp send failed every 30s retry for ~10 minutes with
+    nothing anywhere saying so."""
+    approval_id = _schedule_then_make_it_due(settings)
+
+    import axon.brain.workflow as workflow_module
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("simulated send failure")
+
+    original = workflow_module.resume_capture
+    workflow_module.resume_capture = boom
+    try:
+        result = service.fire_scheduled_approvals(settings=settings)
+    finally:
+        workflow_module.resume_capture = original
+
+    assert len(result.failed) == 1
+    failed_id, error = result.failed[0]
+    assert failed_id == approval_id
+    assert "simulated send failure" in error

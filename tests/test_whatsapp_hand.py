@@ -13,7 +13,7 @@ from axon.config import Settings
 from axon.hands import pick_hand
 from axon.hands.noop import NoopHand
 from axon.hands.whatsapp import WhatsAppHand, looks_like_a_whatsapp_note
-from axon.models import ApprovalOutcome, Classification, ClassifiedNote, NoteKind
+from axon.models import ApprovalOutcome, Classification, ClassifiedNote, MessageDraft, NoteKind
 
 
 def _note(text: str, note_id: int = 1) -> ClassifiedNote:
@@ -178,6 +178,42 @@ async def test_execute_sends_the_drafted_message_as_a_template(settings: Setting
     assert body["type"] == "template"
     assert body["template"]["name"] == "axon_note"
     assert body["template"]["components"][0]["parameters"][0]["text"] == "the wifi password"
+
+
+async def test_execute_strips_newlines_from_the_message(settings: Settings) -> None:
+    """Real bug, found live: a template parameter containing a newline is rejected
+    outright by Meta (error 132018, "Param text cannot have new-line/tab characters or
+    more than 4 consecutive spaces") -- an edited multi-line draft failed every 30s
+    retry for ~10 minutes with the failure invisible everywhere before this existed."""
+    hand = WhatsAppHand(settings=_configured(settings))
+    outcome = ApprovalOutcome(
+        note=_note("whatsapp me the wifi password"), approved=True,
+        draft=MessageDraft(body="the wifi password\nis on the whiteboard"),
+    )
+    client = _mock_client()
+
+    with patch("httpx.AsyncClient", return_value=client):
+        await hand.execute(outcome)
+
+    sent_text = client.post.call_args[1]["json"]["template"]["components"][0]["parameters"][0]["text"]
+    assert "\n" not in sent_text
+    assert sent_text == "the wifi password is on the whiteboard"
+
+
+async def test_execute_collapses_long_runs_of_spaces(settings: Settings) -> None:
+    """Same Meta constraint, the other half: 4+ consecutive spaces are also rejected."""
+    hand = WhatsAppHand(settings=_configured(settings))
+    outcome = ApprovalOutcome(
+        note=_note("whatsapp me the wifi password"), approved=True,
+        draft=MessageDraft(body="the wifi password" + " " * 8 + "is on the whiteboard"),
+    )
+    client = _mock_client()
+
+    with patch("httpx.AsyncClient", return_value=client):
+        await hand.execute(outcome)
+
+    sent_text = client.post.call_args[1]["json"]["template"]["components"][0]["parameters"][0]["text"]
+    assert "    " not in sent_text
 
 
 async def test_execute_surfaces_metas_error_body(settings: Settings) -> None:

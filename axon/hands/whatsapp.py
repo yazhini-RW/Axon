@@ -57,6 +57,18 @@ def looks_like_a_whatsapp_note(text: str) -> bool:
     return bool(words & _WHATSAPP_WORDS)
 
 
+def _sanitize_for_template(text: str) -> str:
+    """WhatsApp template parameters reject newlines/tabs and 4+ consecutive spaces
+    outright -- found live, not in the docs: a real scheduled send failed every retry
+    for ~10 minutes with error 132018 ("Param text cannot have new-line/tab characters
+    or more than 4 consecutive spaces") after an edited draft picked up a second line.
+    Free-form message text (typed, drafted, or edited) has no reason to respect that
+    constraint, so it's enforced here rather than asking every caller to know about it.
+    """
+    collapsed = re.sub(r"[\n\t\r]+", " ", text)
+    return re.sub(r" {2,}", " ", collapsed).strip()
+
+
 def _draft(text: str) -> str:
     """Pull the message out of the note text. Deterministic, no AI — same "free by
     default" pattern as the mock brain, the mock GitHub builder, email and chat."""
@@ -113,6 +125,7 @@ class WhatsAppHand:
 
         # The approved draft, not a re-derivation -- see MessageDraft's docstring.
         message = outcome.draft.body if outcome.draft else _draft(outcome.note.text)
+        message = _sanitize_for_template(message)
         url = (
             f"https://graph.facebook.com/{GRAPH_VERSION}/"
             f"{settings.whatsapp_phone_number_id}/messages"

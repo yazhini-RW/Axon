@@ -336,17 +336,35 @@ def _execute_approval(conn, approval, approved: bool, settings: Settings) -> Res
     )
 
 
-def fire_scheduled_approvals(settings: Settings | None = None) -> list[ResolveResult]:
+@dataclass
+class ScheduledFireResult:
+    """What happened when the daemon checked for due scheduled sends.
+
+    `failed` exists because a silently-swallowed failure here is worse than a manual
+    approve's: a human watching the approval screen sees ApprovalExecutionFailed
+    immediately, but nothing was watching a scheduled send fail at 3am. Found live, not
+    hypothetically -- a real WhatsApp send failed every 30s retry for ~10 minutes with
+    zero visible trace anywhere, because `continue` on ApprovalExecutionFailed used to
+    be the entire error-handling story here.
+    """
+
+    fired: list[ResolveResult]
+    failed: list[tuple[int, str]]  # (approval_id, error message)
+
+
+def fire_scheduled_approvals(settings: Settings | None = None) -> ScheduledFireResult:
     """Run every scheduled approval whose time has arrived. Called from the reminder
     daemon's sync loop (Step 19) -- scheduled sends only happen while `axon run` is
     active, same as reminder notifications always have.
 
     A send that raises here behaves like ApprovalExecutionFailed always has: the row
     stays 'scheduled' (resolve_approval is never reached on that path inside
-    _execute_approval), so the next sync retries it rather than losing it silently.
+    _execute_approval), so the next sync retries it rather than losing it silently --
+    but see ScheduledFireResult.failed for why "not lost" isn't the same as "visible".
     """
     settings = settings or get_settings()
     fired: list[ResolveResult] = []
+    failed: list[tuple[int, str]] = []
     with repo.open_db(settings) as conn:
         due = [
             a for a in repo.list_scheduled_approvals(conn)
@@ -355,9 +373,9 @@ def fire_scheduled_approvals(settings: Settings | None = None) -> list[ResolveRe
         for approval in due:
             try:
                 fired.append(_execute_approval(conn, approval, True, settings))
-            except ApprovalExecutionFailed:
-                continue
-    return fired
+            except ApprovalExecutionFailed as exc:
+                failed.append((approval.id, str(exc)))
+    return ScheduledFireResult(fired=fired, failed=failed)
 
 
 def doctor_info(settings: Settings | None = None) -> DoctorInfo:

@@ -567,24 +567,34 @@
     to   { clip-path: inset(0 0% 0 0); }
   }
   @keyframes penTravel {
-    0%   { left: -6px; opacity: 0; transform: translateY(0) rotate(28deg); }
+    /* Horizontal, matching the text reveal's own left-to-right clip direction. Bounded
+       with calc(100% - 52px) rather than 100%, so a 56px pen never exits even the
+       narrowest card (the grid's own floor is 168px) -- the earlier 0-100% version was
+       scaled for the old, much-narrower positioning context, not the card itself. */
+    0%   { left: 0.5rem; opacity: 0; transform: translateY(0) rotate(28deg); }
     6%   { opacity: 1; }
-    25%  { transform: translateY(-2px) rotate(24deg); }
-    50%  { transform: translateY(1px) rotate(31deg); }
-    75%  { transform: translateY(-1px) rotate(25deg); }
+    25%  { transform: translateY(-3px) rotate(22deg); }
+    50%  { transform: translateY(2px) rotate(32deg); }
+    75%  { transform: translateY(-2px) rotate(24deg); }
     92%  { opacity: 1; }
-    100% { left: 100%; opacity: 0; transform: translateY(0) rotate(28deg); }
+    100% { left: calc(100% - 52px); opacity: 0; transform: translateY(0) rotate(28deg); }
   }
   .note-row.writing .note-text {
     animation: revealWrite 2.6s linear both;
   }
+  /* Sibling of .note-text, not a child -- it must NOT sit inside the element whose own
+     clip-path is doing the reveal, or the pen gets sliced by that same moving mask
+     (found live: that's exactly what "half cut" was). Positioned relative to
+     .note-row instead, sized deliberately large per direct feedback that a smaller
+     one wasn't registering at all. */
   .write-pen {
     position: absolute;
-    top: -0.55em; left: 0;
-    width: 30px; height: 30px;
+    top: 0.85rem; left: 0.7rem;
+    width: 56px; height: 56px;
     pointer-events: none;
+    z-index: 5;
     animation: penTravel 2.6s linear both;
-    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
+    filter: drop-shadow(0 3px 5px rgba(0,0,0,0.45));
   }
   .note-row .badge {
     align-self: flex-start;
@@ -1078,7 +1088,8 @@ async function refreshNotes() {
       <div class="note-row${isWriting ? " writing" : ""}" style="--i:${i}">
         ${isDone ? `<span class="done-stamp"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Completed</span>` : ""}
         <span class="note-id">#${note.id}</span>
-        <span class="note-text">${isWriting ? PEN_SVG : ""}${escapeHtml(note.text)}${due ? ` <span class="note-status">due ${escapeHtml(due)}</span>` : ""}${scheduledLine ? ` ${scheduledLine}` : ""}</span>
+        <span class="note-text">${escapeHtml(note.text)}${due ? ` <span class="note-status">due ${escapeHtml(due)}</span>` : ""}${scheduledLine ? ` ${scheduledLine}` : ""}</span>
+        ${isWriting ? PEN_SVG : ""}
         <span class="badge ${escapeHtml(note.kind)}">${escapeHtml(KIND_LABEL[note.kind] ?? note.kind)}</span>
         ${note.hand ? `<span class="badge hand-${escapeHtml(note.hand)}">${HAND_ICON[note.hand] || ""} ${escapeHtml(note.hand)}</span>` : ""}
         ${isDone ? "" : `<span class="note-status${isScheduled ? " send-scheduled" : ""}">${escapeHtml(statusLabel)}</span>`}
